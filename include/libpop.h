@@ -22,8 +22,8 @@ struct pop_p2pmem_reg {
 	size_t	size;
 };
 
-#define POP_P2PMEM_REG		_IOR('i', 1, struct pop_p2pmem_reg)
-#define POP_P2PMEM_UNREG	_IOR('i', 2, struct pop_p2pmem_reg)
+#define POP_P2PMEM_REG		_IOW('i', 1, struct pop_p2pmem_reg)
+#define POP_P2PMEM_UNREG	_IOW('i', 2, struct pop_p2pmem_reg)
 
 
 #endif /* LIBPOP_H_ */

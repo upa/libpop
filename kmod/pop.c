@@ -107,8 +107,8 @@ static int pop_register_p2pmem(struct pci_dev *pdev, size_t size) {
 
 	list_add_tail(&ppdev->list, &pop.dev_list);
 
-	pr_info("register %lu-byte p2pmem for /dev/%s\n",
-		ppdev->size, ppdev->devname);
+	pr_info("/dev/%s with %lu-byte p2pmem registered\n",
+		ppdev->devname, ppdev->size);
 
 	return 0;
 }
@@ -120,7 +120,7 @@ static void pop_unregister_p2pmem(struct pop_dev *ppdev) {
 	pci_dev_put(ppdev->pdev);
 	list_del(&ppdev->list);
 
-	pr_info("unregister /dev/%s\n", ppdev->devname);
+	pr_info("/dev/%s unregistered\n", ppdev->devname);
 	kfree(ppdev);
 }
 
@@ -150,6 +150,12 @@ static long pop_ioctl(struct file *filp,
 			return -EFAULT;
 		}
 
+		if (reg.size < (1 << PAGE_SHIFT) ||
+		    reg.size % (1 << PAGE_SHIFT) != 0) {
+			pr_err("size must be power of %d\n", 1 << PAGE_SHIFT);
+			return -EINVAL;
+		}
+
 		pdev = pci_get_domain_bus_and_slot(reg.domain, reg.bus,
 						   PCI_DEVFN(reg.slot,
 							     reg.func));
@@ -169,8 +175,8 @@ static long pop_ioctl(struct file *filp,
 		ret = pop_register_p2pmem(pdev, reg.size);
 		if (ret) 
 			goto dev_put_out;
-			
-		
+		break;
+
 	case POP_P2PMEM_UNREG:
 		if (copy_from_user(&reg, (void *)data, sizeof(reg)) != 0) {
 			pr_err("%s: copy_from_user failed\n", __func__);
