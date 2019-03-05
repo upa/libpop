@@ -35,9 +35,10 @@ struct pop_dev {
 /* structure describing libpop kernel module */
 struct pop {
 	struct list_head	dev_list;	/* list of pop_dev */
-} pop;
+};
+static struct pop pop;
 
-struct pop_dev *pop_find_dev(struct pci_dev *pdev) {
+static struct pop_dev *pop_find_dev(struct pci_dev *pdev) {
 	struct pop_dev *ppdev;
 
 	list_for_each_entry(ppdev, &pop.dev_list, list) {
@@ -68,7 +69,7 @@ static int pop_register_p2pmem(struct pci_dev *pdev, size_t size) {
 		return -EINVAL;
 	}
 			
-	p2pmem = pci_alloc_p2pmem(pdev,  size);
+	p2pmem = pci_alloc_p2pmem(pdev, size);
 	if (!p2pmem) {
 		pr_err("failed to alloc %lu-byte p2pmem from  %02x:%02x.%x\n",
 		       size, pdev->bus->number, PCI_SLOT(pdev->devfn),
@@ -252,12 +253,14 @@ static void __exit pop_exit(void)
 		pop_unregister_p2pmem(ppdev);
 	}
 
-	/* unregister /dev/pop */
+	/* unregister /dev/pop/pop */
 	misc_deregister(&pop_mdev);
+
 	pr_info("%s (v%s) is unloaded\n", KBUILD_MODNAME, POP_VERSION);
 }
 
 module_init(pop_init);
 module_exit(pop_exit);
 MODULE_AUTHOR("Ryo Nakamura <upa@haeena.net>");
+MODULE_LICENSE("GPL");
 MODULE_VERSION(POP_VERSION);
