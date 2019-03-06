@@ -3,7 +3,7 @@ CC = gcc
 INCLUDE := -I../include
 CFLAGS := -g -Wall $(INCLUDE)
 
-PROGNAME = pop-ioctl
+PROGNAME = pop-ioctl pop-mmap
 
 all: $(PROGNAME)
 

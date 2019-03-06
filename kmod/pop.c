@@ -24,7 +24,7 @@ struct pop_dev {
 
 #define DEVNAMELEN	32
 	struct pci_dev *pdev;	/* target pci dev with p2pmem		*/
-	char	devname[DEVNAMELEN];	/* /dev/pop/BUS:SLOT.FUNC	*/
+	char	devname[DEVNAMELEN];	/* pop/DOMAIN:BUS:SLOT.FUNC	*/
 	void	*p2pmem;     	/* p2pmem of the above pci dev		*/
 	size_t	size;		/* p2pmem size	*/
 
@@ -38,7 +38,8 @@ struct pop {
 };
 static struct pop pop;
 
-static struct pop_dev *pop_find_dev(struct pci_dev *pdev) {
+static struct pop_dev *pop_find_dev(struct pci_dev *pdev)
+{
 	struct pop_dev *ppdev;
 
 	list_for_each_entry(ppdev, &pop.dev_list, list) {
@@ -49,12 +50,142 @@ static struct pop_dev *pop_find_dev(struct pci_dev *pdev) {
 	return NULL;
 }
 
-static struct file_operations pop_dev_fops = {
-	.owner		= THIS_MODULE,
+
+static struct pop_dev *pop_find_dev_by_bus_and_slot(int domain,
+						    unsigned int bus,
+						    unsigned int devfn)
+{
+	struct pci_dev *pdev;
+	struct pop_dev *ppdev;
+
+	pdev = pci_get_domain_bus_and_slot(domain, bus, devfn);
+	if (!pdev)
+		return NULL;
+
+	ppdev = pop_find_dev(pdev);
+	pci_dev_put(pdev);
+
+	return ppdev;
+}
+
+static int pop_dev_open(struct inode *inode, struct file *filp)
+{
+	int domain, ret;
+	unsigned int bus, slot, func;
+	struct pop_dev *ppdev;
+
+	ret = sscanf(filp->f_path.dentry->d_name.name, "%x:%x:%x.%x",
+		     &domain, &bus, &slot, &func);
+	if (unlikely(ret < 4)) {
+		pr_err("%s: invalid pop dev name %s\n", __func__,
+		       filp->f_path.dentry->d_name.name);
+		return -EINVAL;
+	}
+
+	ppdev = pop_find_dev_by_bus_and_slot(domain, bus,
+					     PCI_DEVFN(slot, func));
+	if (!ppdev) {
+		pr_err("%s: %s is not registered as pop dev\n", __func__,
+		       filp->f_path.dentry->d_name.name);
+		return -EINVAL;
+	}
+
+	atomic_inc(&ppdev->refcnt);
+	filp->private_data = ppdev;
+
+	return 0;
+}
+
+static int pop_dev_release(struct inode *inode, struct file *filp)
+{
+	struct pop_dev *ppdev = (struct pop_dev *)filp->private_data;
+	atomic_dec(&ppdev->refcnt);
+	filp->private_data = NULL;
+	return 0;
+}
+
+
+static int pop_dev_mem_fault(struct vm_fault *vmf)
+{
+	struct pop_dev *ppdev;
+	struct vm_area_struct *vma = vmf->vma;
+	struct page *page;
+	unsigned long pagenum = vmf->pgoff;
+	unsigned long pa, pfn;
+
+	if (unlikely(!vmf->vma->vm_file)) {
+		pr_err("%s: vmf->vma->vm_file is NULL\n", __func__);
+		return -EINVAL;
+	}
+
+	ppdev = vmf->vma->vm_file->private_data;
+	if (unlikely(!ppdev)) {
+		pr_err("%s: vmf->vma->vm_file->private_data (pop_dev) is NULL",
+		       __func__);
+		return -EINVAL;
+	}
+
+	pr_debug("%s: vma->vm_pgoff=%ld, vmf->pgoff=%ld\n",
+		__func__, vma->vm_pgoff, vmf->pgoff);
+	pr_debug("%s: page number %ld\n", __func__, pagenum);
+
+	pa = virt_to_phys(ppdev->p2pmem + (pagenum << PAGE_SHIFT));
+	pr_debug("%s: paddr of mapped p2pmem is %lx\n",
+		__func__, pa);
+	if (pa == 0) {
+		pr_err("wrong pa\n");
+		return VM_FAULT_SIGBUS;
+	}
+
+	pfn = pa >> PAGE_SHIFT;
+	if (!pfn_valid(pfn)) {
+		pr_err("invalid pfn %lx\n", pfn);
+		return VM_FAULT_SIGBUS;
+	}
+
+	page = pfn_to_page(pfn);
+	get_page(page);
+	vmf->page = page;
+
+	return 0;
+}
+
+static struct vm_operations_struct pop_dev_mmap_ops = {
+	.fault	= pop_dev_mem_fault,
 };
 
-static int pop_register_p2pmem(struct pci_dev *pdev, size_t size) {
+static int pop_dev_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+	struct pop_dev *ppdev = filp->private_data;
+	unsigned long off = vma->vm_pgoff << PAGE_SHIFT;
+	unsigned long len = vma->vm_end - vma->vm_start;
 
+	if (!ppdev) {
+		pr_err("%s: filp->private_data is NULL\n", __func__);
+		return -EINVAL;
+	}
+
+	pr_debug("%s: offset is %lu, length is %lu\n", __func__, off, len);
+	if (off + len > ppdev->size) {
+		pr_err("%s: len %lu is larger than p2pmem size %lu of %s\n",
+		       __func__, len,  ppdev->size, ppdev->devname);
+		return -ENOMEM;
+	}
+
+	vma->vm_ops = &pop_dev_mmap_ops;
+
+	return 0;
+}
+
+static struct file_operations pop_dev_fops = {
+	.owner		= THIS_MODULE,
+	.mmap		= pop_dev_mmap,
+	.open		= pop_dev_open,
+	.release	= pop_dev_release,
+};
+
+static int pop_register_p2pmem(struct pci_dev *pdev, size_t size)
+{
 	/* allocate 'size'-byte p2pmem from pdev, register miscdevice
 	 * for the p2pmem, and register pop_dev to pop.dev_list */
 
@@ -63,17 +194,17 @@ static int pop_register_p2pmem(struct pci_dev *pdev, size_t size) {
 	struct pop_dev *ppdev;
 	
 	if (pop_find_dev(pdev)) {
-		pr_err("device %02x:%02x.%x is already registered\n",
-		       pdev->bus->number, PCI_SLOT(pdev->devfn),
-		       PCI_SLOT(pdev->devfn));
+		pr_err("device %04x:%02x:%02x.%x is already registered\n",
+		       pci_domain_nr(pdev->bus), pdev->bus->number,
+		       PCI_SLOT(pdev->devfn), PCI_SLOT(pdev->devfn));
 		return -EINVAL;
 	}
 			
 	p2pmem = pci_alloc_p2pmem(pdev, size);
 	if (!p2pmem) {
-		pr_err("failed to alloc %lu-byte p2pmem from  %02x:%02x.%x\n",
-		       size, pdev->bus->number, PCI_SLOT(pdev->devfn),
-		       PCI_FUNC(pdev->devfn));
+		pr_err("failed to alloc %luB p2pmem from  %04x:%02x:%02x.%x\n",
+		       size, pci_domain_nr(pdev->bus), pdev->bus->number,
+		       PCI_SLOT(pdev->devfn), PCI_FUNC(pdev->devfn));
 		return -ENOMEM;
 	}
 
@@ -87,9 +218,9 @@ static int pop_register_p2pmem(struct pci_dev *pdev, size_t size) {
 
 	memset(ppdev, 0, sizeof(*ppdev));
 	INIT_LIST_HEAD(&ppdev->list);
-	snprintf(ppdev->devname, DEVNAMELEN, "pop/%02x:%02x.%x",
-		 pdev->bus->number, PCI_SLOT(pdev->devfn),
-		 PCI_FUNC(pdev->devfn));
+	snprintf(ppdev->devname, DEVNAMELEN, "pop/%04x:%02x:%02x.%x",
+		 pci_domain_nr(pdev->bus), pdev->bus->number,
+		 PCI_SLOT(pdev->devfn), PCI_FUNC(pdev->devfn));
 	ppdev->pdev		= pdev;
 	ppdev->p2pmem		= p2pmem;
 	ppdev->size		= size;
@@ -107,13 +238,14 @@ static int pop_register_p2pmem(struct pci_dev *pdev, size_t size) {
 
 	list_add_tail(&ppdev->list, &pop.dev_list);
 
-	pr_info("/dev/%s with %lu-byte p2pmem registered\n",
+	pr_info("/dev/%s with %luB p2pmem registered\n",
 		ppdev->devname, ppdev->size);
 
 	return 0;
 }
 
-static void pop_unregister_p2pmem(struct pop_dev *ppdev) {
+static void pop_unregister_p2pmem(struct pop_dev *ppdev)
+{
 	
 	misc_deregister(&ppdev->mdev);
 	pci_free_p2pmem(ppdev->pdev, ppdev->p2pmem, ppdev->size);
@@ -125,19 +257,18 @@ static void pop_unregister_p2pmem(struct pop_dev *ppdev) {
 }
 
 
-static int pop_open(struct inode *inode, struct file *filp) {
-	pr_info("%s\n", __func__);
+static int pop_open(struct inode *inode, struct file *filp)
+{
 	return 0;
 }
 
-static int pop_release(struct inode *inode, struct file *filp) {
-	pr_info("%s\n", __func__);
+static int pop_release(struct inode *inode, struct file *filp)
+{
 	return 0;
 }
 
-static long pop_ioctl(struct file *filp,
-		      unsigned int cmd, unsigned long data) {
-	
+static long pop_ioctl(struct file *filp, unsigned int cmd, unsigned long data)
+{
 	int ret = 0;
 	struct pop_p2pmem_reg reg;
 	struct pci_dev *pdev;
