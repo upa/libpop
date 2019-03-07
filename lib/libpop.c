@@ -282,7 +282,7 @@ void print_pop_buf(pop_buf_t *pbuf)
 }
 
 
-/* pop driver initialization */
+/* pop driver initialization and i/o wrapper for driver specific i/o */
 #ifdef POP_DRIVER_NETMAP
 #include <pop_netmap.h>
 #endif
@@ -323,6 +323,16 @@ int pop_driver_exit(pop_driver_t *drv)
 
 	/* not reached */
 	return -1;
+}
+
+int pop_read(pop_driver_t *drv, pop_buf_t **pbufs, int nbufs, int qid)
+{
+	return drv->pop_driver_read(drv, pbufs, nbufs, qid);
+}
+
+int pop_write(pop_driver_t *drv, pop_buf_t **pbufs, int nbufs, int qid)
+{
+	return drv->pop_driver_write(drv, pbufs, nbufs, qid);
 }
 
 

@@ -120,10 +120,10 @@ struct pop_driver {
 
 	int type;
 
-	int (*pop_driver_write)(pop_driver_t *drv,
-				pop_buf_t *pbufs, int nbufs, int qid);
-	int (*pop_driver_read)(pop_driver_t *drv,
-			       pop_buf_t *pbufs, int nbufs, int qid);
+	int (*pop_driver_write)(pop_driver_t *drv, pop_buf_t **pbufs,
+				int nbufs, int qid);
+	int (*pop_driver_read)(pop_driver_t *drv, pop_buf_t **pbufs,
+			       int nbufs, int qid);
 	int (*pop_driver_poll)(pop_driver_t *drv, int qid);
 
 	void *data;
@@ -155,11 +155,11 @@ int pop_driver_exit(pop_driver_t *drv);
  *
  * drv:	  driver structure describing underlay driver.
  * pbufs: an array of pop_buf_t.
- * nbufs: number of the array of pop_buf_t.
+ * nbufs: number of the array of pop_buf_t *.
  * qid:   queue id on underlay driver, e.g., NIC ring or NVMe SQ on CPU.
  */
-int pop_read(pop_driver_t *drv, pop_buf_t *pbufs, int nbufs, int qid);
-int pop_write(pop_driver_t *drv, pop_buf_t *pbufs, int nbufs, int qid);
+int pop_read(pop_driver_t *drv, pop_buf_t **pbufs, int nbufs, int qid);
+int pop_write(pop_driver_t *drv, pop_buf_t **pbufs, int nbufs, int qid);
 int pop_poll(pop_driver_t *drv, int qid); /* currently only for netmap */
 
 #endif /* __KERNEL__ */

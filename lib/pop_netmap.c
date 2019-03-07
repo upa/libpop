@@ -33,7 +33,7 @@ struct pop_driver_netmap {
 	int ncpus;		/* number of cpus */
 };
 
-static int pop_driver_netmap_read(pop_driver_t *drv, pop_buf_t *pbufs,
+static int pop_driver_netmap_read(pop_driver_t *drv, pop_buf_t **pbufs,
 				  int nbufs, int qid)
 {
 	int n, ret;
@@ -56,8 +56,8 @@ static int pop_driver_netmap_read(pop_driver_t *drv, pop_buf_t *pbufs,
 
 	for (n = 0; n < budget; n++) {
 		cur = ring->cur;
-		ring->slot[cur].len = pop_buf_len(&pbufs[n]);
-		ring->slot[cur].ptr = pop_buf_paddr(&pbufs[n]);
+		ring->slot[cur].len = pop_buf_len(pbufs[n]);
+		ring->slot[cur].ptr = pop_buf_paddr(pbufs[n]);
 		ring->slot[cur].flags |= NS_PHY_INDIRECT;	/* XXX */
 
 		cur = nm_ring_next(ring, cur);
@@ -73,7 +73,7 @@ static int pop_driver_netmap_read(pop_driver_t *drv, pop_buf_t *pbufs,
 	return 0;
 }
 
-static int pop_driver_netmap_write(pop_driver_t *drv, pop_buf_t *pbufs,
+static int pop_driver_netmap_write(pop_driver_t *drv, pop_buf_t **pbufs,
 				   int nbufs, int qid)
 {
 	int n, ret;
@@ -94,20 +94,28 @@ static int pop_driver_netmap_write(pop_driver_t *drv, pop_buf_t *pbufs,
 
 	budget = (nm_ring_space(ring) > nbufs) ? nbufs : nm_ring_space(ring);
 
+	printf("qid %d, nm_desc=%p, budget=%u\n", qid, nm->d[qid], budget);
+
 	for (n = 0; n < budget; n++) {
 		cur = ring->cur;
-		ring->slot[cur].len = pop_buf_len(&pbufs[n]);
-		ring->slot[cur].ptr = pop_buf_paddr(&pbufs[n]);
+		ring->slot[cur].len = pop_buf_len(pbufs[n]);
+		ring->slot[cur].ptr = pop_buf_paddr(pbufs[n]);
 		ring->slot[cur].flags |= NS_PHY_INDIRECT;	/* XXX */
+
+		printf("slot len = %u\n", ring->slot[cur].len);
+		printf("ptr  len = %lx\n", ring->slot[cur].ptr);
 
 		cur = nm_ring_next(ring, cur);
 		ring->head = ring->cur = cur;
 	}
 
-	ret = ioctl(nm->d[qid]->fd, NIOCTXSYNC, NULL);
-	if (ret != 0) {
-		pr_ve("NIOCTXSYNC failed");
-		return -1;
+	int i;
+	for (i = 0; i < nm->ncpus; i++) {
+		ret = ioctl(nm->d[i]->fd, NIOCTXSYNC, NULL);
+		if (ret != 0) {
+			pr_ve("NIOCTXSYNC failed");
+			return -1;
+		}
 	}
 
 	return n;
