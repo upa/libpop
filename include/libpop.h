@@ -42,7 +42,7 @@ struct pop_ctx {
 	void	*mem;			/* mmaped region		*/
 	size_t	size;			/* size of allocated region	*/
 	size_t	num_pages;		/* # of pages 		*/
-	size_t	allocated_pages;       	/* # of allocated pages	*/
+	size_t	alloced_pages;       	/* # of allocated pages	*/
 
 	/* options */
 	int	verbose;		/* verbose mode */
@@ -68,7 +68,7 @@ int pop_ctx_verbose(pop_ctx_t *ctx, int level);
 
 /* structure describing pop buffer on p2pmem */
 struct pop_buf {
-	pop_ctx_t	*pctx;	/* parent context  */
+	pop_ctx_t	*ctx;	/* parent pop context  */
 
 	void		*vaddr;	/* virtual address on mmap region	*/
 	uintptr_t	paddr;	/* physical addres of the vaddr		*/
@@ -79,16 +79,21 @@ struct pop_buf {
 };
 typedef struct pop_buf pop_buf_t;
 
-/* handling pop_buf like sk_buff */
-pop_buf_t *pop_buf_alloc(pop_ctx_t *pctx, size_t size);
-void *pop_buf_free(pop_buf_t *pbuf);
+/* operating pop_buf like sk_buff */
+pop_buf_t *pop_buf_alloc(pop_ctx_t *ctx, size_t size);
+void pop_buf_free(pop_buf_t *pbuf);
 
 void *pop_buf_data(pop_buf_t *pbuf);
+size_t pop_buf_len(pop_buf_t *pbuf);
+
 void *pop_buf_put(pop_buf_t *pbuf, size_t len);
+void *pop_buf_trim(pop_buf_t *pbuf, size_t len);
 void *pop_buf_pull(pop_buf_t *pbuf, size_t len);
 void *pop_buf_push(pop_buf_t *pbuf, size_t len);
-void *pop_buf_trim(pop_buf_t *pbuf, size_t len);
 
+
+/* debug use */
+void print_pop_buf(pop_buf_t *pbuf);
 
 
 

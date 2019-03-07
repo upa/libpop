@@ -4,7 +4,7 @@ LDFLAGS	:= -L../lib
 LDLIBS	:= -lpop
 CFLAGS	:= -g -Wall $(INCLUDE)
 
-PROGNAME = test_ctx
+PROGNAME = test_ctx test_pbuf
 
 all: $(PROGNAME)
 

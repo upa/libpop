@@ -43,6 +43,12 @@
 	if (ctx->verbose) { pr_e(fmt, ##__VA_ARGS__); }
 
 
+/* prototypes for internal uses */
+static uintptr_t virt_to_phys(pop_ctx_t *ctx, void *addr);
+
+
+/* context operations  */
+
 int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size)
 {
 	/*
@@ -53,11 +59,17 @@ int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size)
 	int verbose = ctx->verbose;
 	char popdev[32];
 
+	/* validation */
+	if (size % (1 << PAGE_SHIFT) || size < (1 << PAGE_SHIFT)) {
+		pr_ve("size must be power of %d", 1 << PAGE_SHIFT);
+		return -1;
+	}
+
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->size	= size;
 	ctx->num_pages	= size >> PAGE_SHIFT;
 	ctx->verbose	= verbose;
-	
+
 	if (dev == NULL) {
 		/* hugepage */
 		strncpy(ctx->devname, "hugepage", POP_PCI_DEVNAME_MAX);
@@ -162,3 +174,177 @@ int pop_ctx_exit(pop_ctx_t *ctx)
 	return 0;
 }
 
+
+/* pop_buf operations */
+
+pop_buf_t *pop_buf_alloc(pop_ctx_t *ctx, size_t size)
+{
+	pop_buf_t *pbuf;
+
+	/* XXX: should lock! */
+
+	/* validation */
+	if (size % (1 << PAGE_SHIFT) || size < (1 << PAGE_SHIFT)) {
+		pr_ve("size must be power of %d", 1 << PAGE_SHIFT);
+		return NULL;
+	}
+	    
+	if ((ctx->num_pages - ctx->alloced_pages) < (size >> PAGE_SHIFT)) {
+		pr_ve("no page available on %s", ctx->devname);
+		errno = ENOBUFS;
+		return NULL;
+	}
+
+	pbuf = malloc(sizeof(*pbuf));
+	if (!pbuf) {
+		pr_ve("failed to allocate pop_buf structure");
+		return NULL;
+	}
+
+	memset(pbuf, 0, sizeof(*pbuf));
+	pbuf->ctx	= ctx;
+	pbuf->vaddr	= ctx->mem + ((ctx->alloced_pages << PAGE_SHIFT));
+	pbuf->paddr	= virt_to_phys(ctx, pbuf->vaddr);
+	pbuf->size	= size;
+	pbuf->offset	= 0;
+	pbuf->length	= 0;
+
+	ctx->alloced_pages += size >> PAGE_SHIFT;
+
+	return pbuf;
+}
+
+void pop_buf_free(pop_buf_t *pbuf)
+{
+	/* ToDo: hehe... */
+
+	free(pbuf);
+}
+
+inline void *pop_buf_data(pop_buf_t *pbuf)
+{
+	return pbuf->vaddr + pbuf->offset;
+}
+
+inline void *pop_buf_put(pop_buf_t *pbuf, size_t len)
+{
+	pop_ctx_t *ctx = pbuf->ctx;
+
+	if (pbuf->offset + pbuf->length + len > pbuf->size) {
+		pr_ve("failed to put: size=%lu off=%lu length=%lu putlen=%lu",
+		      pbuf->size, pbuf->offset, pbuf->length, len);
+		return NULL;
+	}
+
+	pbuf->length += len;
+	return pop_buf_data(pbuf);
+}
+
+inline void *pop_buf_trim(pop_buf_t *pbuf, size_t len)
+{
+	pop_ctx_t *ctx = pbuf->ctx;
+
+	if (pbuf->length < len) {
+		pr_ve("failed to trim: size=%lu off=%lu length=%lu putlen=%lu",
+		      pbuf->size, pbuf->offset, pbuf->length, len);
+		return NULL;
+	}
+
+	pbuf->length -= len;
+	return pop_buf_data(pbuf);
+}
+
+inline void *pop_buf_pull(pop_buf_t *pbuf, size_t len)
+{
+	pop_ctx_t *ctx = pbuf->ctx;
+
+	if (pbuf->length < len) {
+		pr_ve("failed to pull: size=%lu off=%lu length=%lu putlen=%lu",
+		      pbuf->size, pbuf->offset, pbuf->length, len);
+		return NULL;
+	}
+
+	pbuf->length -= len;
+	pbuf->offset += len;
+	return pop_buf_data(pbuf);
+}
+
+inline void *pop_buf_push(pop_buf_t *pbuf, size_t len)
+{
+	pop_ctx_t *ctx = pbuf->ctx;
+
+	if (pbuf->offset < len) {
+		pr_ve("failed to push: size=%lu off=%lu length=%lu putlen=%lu",
+		      pbuf->size, pbuf->offset, pbuf->length, len);
+		return NULL;
+	}
+
+	pbuf->length += len;
+	pbuf->offset -= len;
+	return pop_buf_data(pbuf);
+}
+
+inline size_t pop_buf_len(pop_buf_t *pbuf)
+{
+	return pbuf->length - pbuf->offset;
+}
+
+/* for debaug use */
+void print_pop_buf(pop_buf_t *pbuf)
+{
+	fprintf(stderr, "ctx:              %p\n", pbuf->ctx);
+	fprintf(stderr, " - devname:       %s\n", pbuf->ctx->devname);
+	fprintf(stderr, " - alloced_pages: %lu\n", pbuf->ctx->alloced_pages);
+	fprintf(stderr, "vaddr:            %p\n", pbuf->vaddr);
+	fprintf(stderr, "paddr:            0x%lx\n", pbuf->paddr);
+	fprintf(stderr, "size:             %lu\n", pbuf->size);
+	fprintf(stderr, "offset:           %lu\n", pbuf->offset);
+	fprintf(stderr, "length:           %lu\n", pbuf->length);
+}
+
+/* internal uses */
+
+inline uintptr_t pop_buf_paddr(pop_buf_t *pbuf)
+{
+	return pbuf->paddr + pbuf->offset;
+}
+
+
+static uintptr_t virt_to_phys(pop_ctx_t *ctx, void *addr)
+{
+	int fd;
+	long pagesize;
+	off_t ret;
+	ssize_t rc;
+	uintptr_t entry = 0;
+
+	fd = open("/proc/self/pagemap", O_RDONLY);
+	if (fd < 0) {
+		pr_ve("open /proc/self/pagemap: %s", strerror(errno));
+		return 0;
+	}
+
+	pagesize = sysconf(_SC_PAGESIZE);
+
+	ret = lseek(fd, (uintptr_t)addr / pagesize * sizeof(uintptr_t),
+		    SEEK_SET);
+	if (ret < 0) {
+		pr_ve("lseek for /proc/self/pagemap: %s", strerror(errno));
+		goto err_out;
+	}
+
+	rc = read(fd, &entry, sizeof(entry));
+	if (rc < 1 || entry == 0) {
+		pr_ve("read for /proc/self/pagemap: %s", strerror(errno));
+		goto err_out;
+	}
+
+	close(fd);
+
+	return (entry & 0x7fffffffffffffULL) * pagesize +
+		((uintptr_t)addr) % pagesize;
+
+err_out:
+	close(fd);
+	return 0;
+}
