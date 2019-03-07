@@ -2,15 +2,18 @@
 CC = gcc
 INCLUDE := -I../include
 CFLAGS := -g -Wall $(INCLUDE)
-LDL_FLAGS := -fPIC -shared -ldl
+LDL_FLAGS :=
 LIB :=
 
-PROGNAME = libpop.so
+PROGNAME = libpop.a
 
 all: $(PROGNAME)
 
 .c.o:
 	$(CC) $(INCLUDE) $(LDL_FLAGS) $(CFLAGS) -c $<
 
-libpop.so: libpop.c
-	$(CC) $< $(CFLAGS) $(LDL_FLAGS) $(LIB) -o $@
+libpop.a: libpop.o
+	ar rcs libpop.a libpop.o
+
+clean:
+	rm -rf *.o *.a

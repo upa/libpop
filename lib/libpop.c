@@ -76,7 +76,7 @@ int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size)
 				     &ctx->reg.slot, &ctx->reg.func);
 		}
 		if (ret < 3) {
-			pr_ve("invalid pci slot %s\n", dev);
+			pr_ve("invalid pci slot %s", dev);
 			errno = EINVAL;
 			return -1;
 		}
@@ -85,13 +85,13 @@ int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size)
 
 		fd = open(DEVPOP, O_RDWR);
 		if (fd < 0) {
-			pr_ve("failed to open %s\n", DEVPOP);
+			pr_ve("failed to open %s", DEVPOP);
 			return -1;
 		}
 
 		ret = ioctl(fd, POP_P2PMEM_REG, &ctx->reg);
 		if (ret != 0) {
-			pr_ve("failed to register p2pmem on %s\n", dev);
+			pr_ve("failed to register p2pmem on %s", dev);
 			close(fd);
 			return -1;
 		}
@@ -104,7 +104,7 @@ int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size)
 			 ctx->reg.slot, ctx->reg.func);
 		ctx->fd = open(popdev, O_RDWR);
 		if (ctx->fd < 0) {
-			pr_ve("failed to open %s\n", popdev);
+			pr_ve("failed to open %s", popdev);
 			return -1;
 		}
 
@@ -113,11 +113,13 @@ int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size)
 	}
 	
 	/* XXX: handle offset */
-	ctx->mem = mmap(0, size, PROT_READ | PROT_WRITE, flags, ctx->fd, 0);
+	ctx->mem = mmap(0, ctx->size, PROT_READ | PROT_WRITE,
+			flags, ctx->fd, 0);
 	if (ctx->mem == MAP_FAILED) {
-		pr_ve("failed to mmap on %s\n", ctx->devname);
+		pr_ve("failed to mmap on %s", ctx->devname);
 		if (ctx->fd != -1)
 			close(ctx->fd);
+		return -1;
 	}
 
 	return 0;
@@ -128,20 +130,30 @@ int pop_ctx_exit(pop_ctx_t *ctx)
 {
 	/* unregister dev and its p2pmem through /dev/pop/pop */
 	
-	int ret;
+	int ret, fd;
 
 	if (ctx->fd == -1) {
 		/* hugepage */
+#if 0
+		/* XXX: should munmap, but it fails... */
 		ret = munmap(ctx->mem, ctx->size);
 		if (ret != 0) {
-			pr_ve("failed to munmap on %s\n", ctx->devname);
+			pr_ve("failed to munmap on %s", ctx->devname);
 			return -1;
 		}
+#endif
 	} else {
 		/* pop device. unregister it through /dev/pop/pop */
-		ret = ioctl(ctx->fd, POP_P2PMEM_UNREG, &ctx->reg);
+
+		fd = open(DEVPOP, O_RDWR);
+		if (fd < 0) {
+			pr_ve("failed to open %s", DEVPOP);
+			return -1;
+		}
+
+		ret = ioctl(fd, POP_P2PMEM_UNREG, &ctx->reg);
 		if (ret != 0) {
-			pr_ve("failed to unregister %s\n", ctx->devname);
+			pr_ve("failed to unregister %s", ctx->devname);
 			return -1;
 		}
 		return close(ctx->fd);

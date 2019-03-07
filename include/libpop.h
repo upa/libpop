@@ -5,6 +5,7 @@
 #ifndef _LIBPOP_H_
 #define _LIBPOP_H_
 
+#include <stdint.h>	/* uintptr_t */
 
 /*
  * ioctl for /dev/pop/pop.
@@ -56,8 +57,8 @@ typedef struct pop_ctx pop_ctx_t;
  * set appropriately.
  *
  * ctx: libpop context.
- * dev: string for PCI slot num, or NULL means hugepages
- * size: size of allocated memory (must be power of page size)
+ * dev: string for PCI slot num, or NULL means hugepages.
+ * size: size of allocated memory (must be power of page size).
  */
 int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size);
 int pop_ctx_exit(pop_ctx_t *ctx);
