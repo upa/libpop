@@ -199,10 +199,10 @@ static int pop_register_p2pmem(struct pci_dev *pdev, size_t size)
 	struct pop_dev *ppdev;
 
 	if (pop_find_dev(pdev)) {
-		pr_err("device %04x:%02x:%02x.%x is already registered\n",
+		pr_warn("device %04x:%02x:%02x.%x is already registered\n",
 		       pci_domain_nr(pdev->bus), pdev->bus->number,
 		       PCI_SLOT(pdev->devfn), PCI_SLOT(pdev->devfn));
-		return -EEXIST;
+		return 0;
 	}
 
 	p2pmem = pci_alloc_p2pmem(pdev, size);

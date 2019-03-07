@@ -21,6 +21,8 @@ int main(int argc, char **argv)
 	pop_ctx_t ctx;
 	pop_buf_t *pbuf[NUM_BUFS];
 
+	libpop_verbose_enable();
+
 	while ((ch = getopt(argc, argv, "b:")) != -1) {
 
 		switch (ch) {
@@ -35,6 +37,9 @@ int main(int argc, char **argv)
 
 	/* allocate p2pmem on NoLoad */
 	ret = pop_ctx_init(&ctx, pci, 4096 * NUM_BUFS * 2);
+	if (ret != 0) {
+		perror("pop_ctx_init");
+	}
 	assert(ret == 0);
 	
 	/* allocate pbuf */
