@@ -63,8 +63,8 @@ typedef struct pop_ctx {
  * success, zero is returned. On error, -1 is returned, and errno is
  * set appropriately.
  *
- * ctx: libpop context.
- * dev: string for PCI slot num, or NULL means hugepages.
+ * ctx:  libpop context.
+ * dev:  string for PCI slot num, or NULL means hugepages.
  * size: size of allocated memory (must be power of page size).
  */
 int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size);
@@ -95,6 +95,7 @@ void pop_buf_free(pop_buf_t *pbuf);
 
 void *pop_buf_data(pop_buf_t *pbuf);
 size_t pop_buf_len(pop_buf_t *pbuf);
+uintptr_t pop_buf_paddr(pop_buf_t *pbuf);
 
 void *pop_buf_put(pop_buf_t *pbuf, size_t len);
 void *pop_buf_trim(pop_buf_t *pbuf, size_t len);
@@ -123,6 +124,8 @@ struct pop_driver {
 				pop_buf_t *pbufs, int nbufs, int qid);
 	int (*pop_driver_read)(pop_driver_t *drv,
 			       pop_buf_t *pbufs, int nbufs, int qid);
+	int (*pop_driver_poll)(pop_driver_t *drv, int qid);
+
 	void *data;
 
 };
@@ -130,9 +133,34 @@ struct pop_driver {
 int pop_driver_init(pop_driver_t *drv, int type, void *arg);
 int pop_driver_exit(pop_driver_t *drv);
 
-int pop_write(pop_driver_t *drv, pop_buf_t *pbufs, int nbufs, int qid);
-int pop_read(pop_driver_t *drv, pop_buf_t *pbufs, int nbufs, int qid);
+/*
+ * pop_ctx_init()
+ *
+ * Register p2pmem pci device or hugepage into libpop context. On
+ * success, zero is returned. On error, -1 is returned, and errno is
+ * set appropriately.
+ *
+ * ctx: libpop context.
+ * dev: string for PCI slot num, or NULL means hugepages.
+ * size: size of allocated memory (must be power of page size).
+ */
 
+/*
+ * pop_read/write()
+ *
+ * read/write data in pbuf from/to underlay driver. Retrusn value is
+ * number of pbufs for read/write. Thus, ret < nbufs means underlay
+ * driver has no more available data (read) or buffer (read). If any
+ * error occurs, they return -1 and errno is set appropriately
+ *
+ * drv:	  driver structure describing underlay driver.
+ * pbufs: an array of pop_buf_t.
+ * nbufs: number of the array of pop_buf_t.
+ * qid:   queue id on underlay driver, e.g., NIC ring or NVMe SQ on CPU.
+ */
+int pop_read(pop_driver_t *drv, pop_buf_t *pbufs, int nbufs, int qid);
+int pop_write(pop_driver_t *drv, pop_buf_t *pbufs, int nbufs, int qid);
+int pop_poll(pop_driver_t *drv, int qid); /* currently only for netmap */
 
 #endif /* __KERNEL__ */
 #endif /* _LIBPOP_H_ */
