@@ -1,4 +1,7 @@
-/* pop.c */
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * pop.c
+ */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -25,11 +28,11 @@ struct pop_dev {
 #define DEVNAMELEN	32
 	struct pci_dev *pdev;	/* target pci dev with p2pmem		*/
 	char	devname[DEVNAMELEN];	/* pop/DOMAIN:BUS:SLOT.FUNC	*/
-	void	*p2pmem;     	/* p2pmem of the above pci dev		*/
+	void	*p2pmem;	/* p2pmem of the above pci dev		*/
 	size_t	size;		/* p2pmem size	*/
 
 	struct miscdevice	mdev;	/* char dev for this pop_dev */
-	atomic_t       		refcnt;
+	atomic_t		refcnt;
 };
 
 /* structure describing libpop kernel module */
@@ -99,6 +102,7 @@ static int pop_dev_open(struct inode *inode, struct file *filp)
 static int pop_dev_release(struct inode *inode, struct file *filp)
 {
 	struct pop_dev *ppdev = (struct pop_dev *)filp->private_data;
+
 	atomic_dec(&ppdev->refcnt);
 	filp->private_data = NULL;
 	return 0;
@@ -150,7 +154,7 @@ static int pop_dev_mem_fault(struct vm_fault *vmf)
 	return 0;
 }
 
-static struct vm_operations_struct pop_dev_mmap_ops = {
+static const struct vm_operations_struct pop_dev_mmap_ops = {
 	.fault	= pop_dev_mem_fault,
 };
 
@@ -177,7 +181,7 @@ static int pop_dev_mmap(struct file *filp, struct vm_area_struct *vma)
 	return 0;
 }
 
-static struct file_operations pop_dev_fops = {
+static const struct file_operations pop_dev_fops = {
 	.owner		= THIS_MODULE,
 	.mmap		= pop_dev_mmap,
 	.open		= pop_dev_open,
@@ -187,19 +191,20 @@ static struct file_operations pop_dev_fops = {
 static int pop_register_p2pmem(struct pci_dev *pdev, size_t size)
 {
 	/* allocate 'size'-byte p2pmem from pdev, register miscdevice
-	 * for the p2pmem, and register pop_dev to pop.dev_list */
+	 * for the p2pmem, and register pop_dev to pop.dev_list
+	 */
 
 	int ret;
 	void *p2pmem;
 	struct pop_dev *ppdev;
-	
+
 	if (pop_find_dev(pdev)) {
 		pr_err("device %04x:%02x:%02x.%x is already registered\n",
 		       pci_domain_nr(pdev->bus), pdev->bus->number,
 		       PCI_SLOT(pdev->devfn), PCI_SLOT(pdev->devfn));
 		return -EINVAL;
 	}
-			
+
 	p2pmem = pci_alloc_p2pmem(pdev, size);
 	if (!p2pmem) {
 		pr_err("failed to alloc %luB p2pmem from  %04x:%02x:%02x.%x\n",
@@ -209,9 +214,8 @@ static int pop_register_p2pmem(struct pci_dev *pdev, size_t size)
 	}
 
 	/* allocte pop_dev structure and register it to struct pop */
-	ppdev = (struct pop_dev *)kmalloc(sizeof(*ppdev), GFP_KERNEL);
+	ppdev = kmalloc(sizeof(*ppdev), GFP_KERNEL);
 	if (!ppdev) {
-		pr_err("failed to allocate pop_dev structure\n");
 		pci_free_p2pmem(pdev, p2pmem, size);
 		return -ENOMEM;
 	}
@@ -228,7 +232,7 @@ static int pop_register_p2pmem(struct pci_dev *pdev, size_t size)
 	ppdev->mdev.fops	= &pop_dev_fops;
 	ppdev->mdev.name	= ppdev->devname;
 	atomic_set(&ppdev->refcnt, 0);
-	
+
 	ret = misc_register(&ppdev->mdev);
 	if (ret) {
 		pr_err("failed to register %s\n", ppdev->devname);
@@ -246,7 +250,6 @@ static int pop_register_p2pmem(struct pci_dev *pdev, size_t size)
 
 static void pop_unregister_p2pmem(struct pop_dev *ppdev)
 {
-	
 	misc_deregister(&ppdev->mdev);
 	pci_free_p2pmem(ppdev->pdev, ppdev->p2pmem, ppdev->size);
 	pci_dev_put(ppdev->pdev);
@@ -274,7 +277,7 @@ static long pop_ioctl(struct file *filp, unsigned int cmd, unsigned long data)
 	struct pci_dev *pdev;
 	struct pop_dev *ppdev;
 
-	switch(cmd) {
+	switch (cmd) {
 	case POP_P2PMEM_REG:
 		if (copy_from_user(&reg, (void *)data, sizeof(reg)) != 0) {
 			pr_err("%s: copy_from_user failed\n", __func__);
@@ -302,9 +305,9 @@ static long pop_ioctl(struct file *filp, unsigned int cmd, unsigned long data)
 			ret = -EINVAL;
 			goto dev_put_out;
 		}
-		
+
 		ret = pop_register_p2pmem(pdev, reg.size);
-		if (ret) 
+		if (ret)
 			goto dev_put_out;
 		break;
 
@@ -344,9 +347,9 @@ dev_put_out:
 	pci_dev_put(pdev);
 	return ret;
 }
-	
 
-static struct file_operations pop_fops = {
+
+static const struct file_operations pop_fops = {
 	.owner		= THIS_MODULE,
 	.open		= pop_open,
 	.release	= pop_release,
@@ -366,7 +369,7 @@ static int __init pop_init(void)
 	/* initialize pop structure */
 	memset(&pop, 0, sizeof(pop));
 	INIT_LIST_HEAD(&pop.dev_list);
-		
+
 	ret = misc_register(&pop_mdev);
 	if (ret) {
 		pr_err("failed to register miscdevice for pop\n");
