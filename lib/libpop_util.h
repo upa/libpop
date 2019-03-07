@@ -1,4 +1,9 @@
 
+#ifndef _LIBPOP_UTIL_H_
+#define _LIBPOP_UTIL_H_
+
+#include <stdio.h>
+
 extern int libpop_verbose;
 
 /* print success (green) */
@@ -20,3 +25,6 @@ extern int libpop_verbose;
 
 #define pr_ve(fmt, ...)					\
 	if (libpop_verbose) { pr_e(fmt, ##__VA_ARGS__); }
+
+
+#endif /* _LIBPOP_UTIL_H_ */

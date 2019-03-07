@@ -1,9 +1,10 @@
 
 CC = gcc
 INCLUDE := -I./ -I../include
-CFLAGS := -g -Wall $(INCLUDE)
+CFLAGS := -g -Wall $(INCLUDE) -DPOP_DRIVER_NETMAP
 LDL_FLAGS :=
-LIB :=
+
+OBJECTS := libpop.o pop_netmap.o
 
 PROGNAME = libpop.a
 
@@ -14,8 +15,8 @@ all: $(PROGNAME)
 
 libpop.o: libpop.c libpop_util.h
 
-libpop.a: libpop.o 
-	ar rcs libpop.a libpop.o
+libpop.a: $(OBJECTS)
+	ar rcs libpop.a $(OBJECTS)
 
 clean:
 	rm -rf *.o *.a

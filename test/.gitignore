@@ -2,3 +2,4 @@
 core
 test_ctx
 test_pbuf
+test_netmap_open

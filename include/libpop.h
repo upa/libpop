@@ -5,6 +5,11 @@
 #ifndef _LIBPOP_H_
 #define _LIBPOP_H_
 
+#ifndef __KERNEL__
+#include <stdio.h>
+#include <stdint.h>	/* uintptr_t */
+#endif /* __KERNEL__ */
+
 
 /*
  * ioctl for /dev/pop/pop. It is only shared with kernel
@@ -28,8 +33,6 @@ struct pop_p2pmem_reg {
 
 
 #ifndef __KERNEL__	/* start userland definition here */
-
-#include <stdint.h>	/* uintptr_t */
 
 /*
  * libpop
@@ -67,7 +70,7 @@ typedef struct pop_ctx {
 int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size);
 int pop_ctx_exit(pop_ctx_t *ctx);
 
-int pop_ctx_verbose(pop_ctx_t *ctx, int level);
+
 
 
 /* structure describing pop buffer on p2pmem */
@@ -83,6 +86,7 @@ typedef struct pop_buf {
 
 	/* driver specific parameters */
 	uint64_t	lba;	/* Logical Address Block on NVMe*/
+	int		ret;	/* pop_write/read ret value for this buf */
 } pop_buf_t;
 
 /* operating pop_buf like sk_buff */
@@ -102,29 +106,33 @@ void *pop_buf_push(pop_buf_t *pbuf, size_t len);
 void print_pop_buf(pop_buf_t *pbuf);
 
 
-/* driver operations */
+
+
+/* driver and i/o operations */
 
 #define POP_DRIVER_TYPE_NETMAP	1
 #define	POP_DRIVER_TYPE_UNVME	2
 
-typedef struct pop_driver {
+/* describing underlay driver */
+typedef struct pop_driver pop_driver_t;
+struct pop_driver {
 
 	int type;
 
-	int (*pop_driver_write)(struct pop_driver *drv,
-				pop_buf_t *pbufs, int *nbufs, int qid);
-	int (*pop_driver_read)(struct pop_driver *drv,
-			       pop_buf_t *pbufs, int *nbufs, int qid);
-	void *driver_data;
+	int (*pop_driver_write)(pop_driver_t *drv,
+				pop_buf_t *pbufs, int nbufs, int qid);
+	int (*pop_driver_read)(pop_driver_t *drv,
+			       pop_buf_t *pbufs, int nbufs, int qid);
+	void *data;
 
-} pop_driver_t;	/* describing underlay driver */
+};
 
 int pop_driver_init(pop_driver_t *drv, int type, void *arg);
 int pop_driver_exit(pop_driver_t *drv);
 
-int pop_write(pop_driver_t *drv, pop_buf_t *pbufs, int *nbufs, int qid);
-int pop_read(pop_driver_t *drv, pop_buf_t *pbufs, int *nbufs, int qid);
+int pop_write(pop_driver_t *drv, pop_buf_t *pbufs, int nbufs, int qid);
+int pop_read(pop_driver_t *drv, pop_buf_t *pbufs, int nbufs, int qid);
 
 
 #endif /* __KERNEL__ */
-#endif /* LIBPOP_H_ */
+#endif /* _LIBPOP_H_ */

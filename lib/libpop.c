@@ -281,6 +281,52 @@ void print_pop_buf(pop_buf_t *pbuf)
 	fprintf(stderr, "length:           %lu\n", pbuf->length);
 }
 
+
+/* pop driver initialization */
+#ifdef POP_DRIVER_NETMAP
+#include <pop_netmap.h>
+#endif
+
+int pop_driver_init(pop_driver_t *drv, int type, void *arg)
+{
+	switch(type) {
+
+#ifdef POP_DRIVER_NETMAP
+	case POP_DRIVER_TYPE_NETMAP:
+		return pop_driver_netmap_init(drv, arg);
+#endif
+
+	default:
+		pr_ve("invalid driver type %d", type);
+		errno = ENOTSUP;
+		return -EINVAL;
+	}
+
+	/* not reached */
+	return -1;
+}
+
+int pop_driver_exit(pop_driver_t *drv)
+{
+	switch(drv->type) {
+
+#ifdef POP_DRIVER_NETMAP
+	case POP_DRIVER_TYPE_NETMAP:
+		return pop_driver_netmap_exit(drv);
+#endif
+
+	default:
+		pr_ve("invalid driver type %d", drv->type);
+		errno = ENOTSUP;
+		return -EINVAL;
+	}
+
+	/* not reached */
+	return -1;
+}
+
+
+
 /* internal uses */
 
 inline uintptr_t pop_buf_paddr(pop_buf_t *pbuf)
