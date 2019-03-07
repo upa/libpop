@@ -21,8 +21,6 @@ int main(int argc, char **argv)
 	pop_ctx_t ctx;
 	pop_buf_t *pbuf[NUM_BUFS];
 
-	ctx.verbose = 1;
-
 	while ((ch = getopt(argc, argv, "b:")) != -1) {
 
 		switch (ch) {

@@ -1,6 +1,6 @@
 
 CC = gcc
-INCLUDE := -I../include
+INCLUDE := -I./ -I../include
 CFLAGS := -g -Wall $(INCLUDE)
 LDL_FLAGS :=
 LIB :=
@@ -12,7 +12,9 @@ all: $(PROGNAME)
 .c.o:
 	$(CC) $(INCLUDE) $(LDL_FLAGS) $(CFLAGS) -c $<
 
-libpop.a: libpop.o
+libpop.o: libpop.c libpop_util.h
+
+libpop.a: libpop.o 
 	ar rcs libpop.a libpop.o
 
 clean:

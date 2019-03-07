@@ -5,10 +5,9 @@
 #ifndef _LIBPOP_H_
 #define _LIBPOP_H_
 
-#include <stdint.h>	/* uintptr_t */
 
 /*
- * ioctl for /dev/pop/pop.
+ * ioctl for /dev/pop/pop. It is only shared with kernel
  */
 
 struct pop_p2pmem_reg {
@@ -28,13 +27,21 @@ struct pop_p2pmem_reg {
 
 
 
+#ifndef __KERNEL__	/* start userland definition here */
+
+#include <stdint.h>	/* uintptr_t */
+
 /*
  * libpop
  */
 
+/* util */
+void libpop_verbose_enable(void);
+void libpop_verbose_disable(void);
+
 /* structure describing pop p2pmem context */
 #define POP_PCI_DEVNAME_MAX	16
-struct pop_ctx {
+typedef struct pop_ctx {
 	int	fd;			/* fd for ioctl and mmap	*/
 	char	devname[POP_PCI_DEVNAME_MAX];	/* '\0' means hugepage	*/
 	struct pop_p2pmem_reg reg;	/* reg for ioctl		*/
@@ -43,11 +50,8 @@ struct pop_ctx {
 	size_t	size;			/* size of allocated region	*/
 	size_t	num_pages;		/* # of pages 		*/
 	size_t	alloced_pages;       	/* # of allocated pages	*/
+} pop_ctx_t;
 
-	/* options */
-	int	verbose;		/* verbose mode */
-};
-typedef struct pop_ctx pop_ctx_t;
 
 /*
  * pop_ctx_init()
@@ -67,7 +71,7 @@ int pop_ctx_verbose(pop_ctx_t *ctx, int level);
 
 
 /* structure describing pop buffer on p2pmem */
-struct pop_buf {
+typedef struct pop_buf {
 	pop_ctx_t	*ctx;	/* parent pop context  */
 
 	void		*vaddr;	/* virtual address on mmap region	*/
@@ -76,8 +80,10 @@ struct pop_buf {
 
 	size_t		offset;	/* offset of data	*/
 	size_t		length;	/* length of data	*/
-};
-typedef struct pop_buf pop_buf_t;
+
+	/* driver specific parameters */
+	uint64_t	lba;	/* Logical Address Block on NVMe*/
+} pop_buf_t;
 
 /* operating pop_buf like sk_buff */
 pop_buf_t *pop_buf_alloc(pop_ctx_t *ctx, size_t size);
@@ -96,5 +102,29 @@ void *pop_buf_push(pop_buf_t *pbuf, size_t len);
 void print_pop_buf(pop_buf_t *pbuf);
 
 
+/* driver operations */
 
+#define POP_DRIVER_TYPE_NETMAP	1
+#define	POP_DRIVER_TYPE_UNVME	2
+
+typedef struct pop_driver {
+
+	int type;
+
+	int (*pop_driver_write)(struct pop_driver *drv,
+				pop_buf_t *pbufs, int *nbufs, int qid);
+	int (*pop_driver_read)(struct pop_driver *drv,
+			       pop_buf_t *pbufs, int *nbufs, int qid);
+	void *driver_data;
+
+} pop_driver_t;	/* describing underlay driver */
+
+int pop_driver_init(pop_driver_t *drv, int type, void *arg);
+int pop_driver_exit(pop_driver_t *drv);
+
+int pop_write(pop_driver_t *drv, pop_buf_t *pbufs, int *nbufs, int qid);
+int pop_read(pop_driver_t *drv, pop_buf_t *pbufs, int *nbufs, int qid);
+
+
+#endif /* __KERNEL__ */
 #endif /* LIBPOP_H_ */

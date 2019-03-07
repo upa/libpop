@@ -16,32 +16,20 @@
 #include <x86_64-linux-gnu/sys/user.h>
 
 #include <libpop.h>
-
-/* useful macro */
+#include <libpop_util.h>
 
 #define PROGNAME	"libpop"
 #define DEVPOP		"/dev/pop/pop"
 
-/* print success (green) */
-#define pr_s(fmt, ...) \
-	fprintf(stderr,							\
-		"\x1b[1m\x1b[32m" PROGNAME ":%d:%s(): " fmt		\
-		"\x1b[0m\n",						\
-		__LINE__, __func__, ##__VA_ARGS__)
+int libpop_verbose = 0;	/* global in libpop */
 
-/* print error (red) */
-#define pr_e(fmt, ...) \
-	fprintf(stderr,							\
-		"\x1b[1m\x1b[31m" PROGNAME ":%d:%s(): " fmt		\
-		"\x1b[0m\n",						\
-		__LINE__, __func__, ##__VA_ARGS__)
+void libpop_verbose_enable(void) {
+	libpop_verbose = 1;
+}
 
-#define pr_vs(fmt, ...)					\
-	if (ctx->verbose) { pr_s(fmt, ##__VA_ARGS__); }
-
-#define pr_ve(fmt, ...)					\
-	if (ctx->verbose) { pr_e(fmt, ##__VA_ARGS__); }
-
+void libpop_verbose_disable(void) {
+	libpop_verbose = 0;
+}
 
 /* prototypes for internal uses */
 static uintptr_t virt_to_phys(pop_ctx_t *ctx, void *addr);
@@ -56,19 +44,18 @@ int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size)
 	 */
 
 	int ret, fd ,flags;
-	int verbose = ctx->verbose;
 	char popdev[32];
 
 	/* validation */
 	if (size % (1 << PAGE_SHIFT) || size < (1 << PAGE_SHIFT)) {
 		pr_ve("size must be power of %d", 1 << PAGE_SHIFT);
+		errno = EINVAL;
 		return -1;
 	}
 
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->size	= size;
 	ctx->num_pages	= size >> PAGE_SHIFT;
-	ctx->verbose	= verbose;
 
 	if (dev == NULL) {
 		/* hugepage */
@@ -228,8 +215,6 @@ inline void *pop_buf_data(pop_buf_t *pbuf)
 
 inline void *pop_buf_put(pop_buf_t *pbuf, size_t len)
 {
-	pop_ctx_t *ctx = pbuf->ctx;
-
 	if (pbuf->offset + pbuf->length + len > pbuf->size) {
 		pr_ve("failed to put: size=%lu off=%lu length=%lu putlen=%lu",
 		      pbuf->size, pbuf->offset, pbuf->length, len);
@@ -242,8 +227,6 @@ inline void *pop_buf_put(pop_buf_t *pbuf, size_t len)
 
 inline void *pop_buf_trim(pop_buf_t *pbuf, size_t len)
 {
-	pop_ctx_t *ctx = pbuf->ctx;
-
 	if (pbuf->length < len) {
 		pr_ve("failed to trim: size=%lu off=%lu length=%lu putlen=%lu",
 		      pbuf->size, pbuf->offset, pbuf->length, len);
@@ -256,8 +239,6 @@ inline void *pop_buf_trim(pop_buf_t *pbuf, size_t len)
 
 inline void *pop_buf_pull(pop_buf_t *pbuf, size_t len)
 {
-	pop_ctx_t *ctx = pbuf->ctx;
-
 	if (pbuf->length < len) {
 		pr_ve("failed to pull: size=%lu off=%lu length=%lu putlen=%lu",
 		      pbuf->size, pbuf->offset, pbuf->length, len);
@@ -271,8 +252,6 @@ inline void *pop_buf_pull(pop_buf_t *pbuf, size_t len)
 
 inline void *pop_buf_push(pop_buf_t *pbuf, size_t len)
 {
-	pop_ctx_t *ctx = pbuf->ctx;
-
 	if (pbuf->offset < len) {
 		pr_ve("failed to push: size=%lu off=%lu length=%lu putlen=%lu",
 		      pbuf->size, pbuf->offset, pbuf->length, len);

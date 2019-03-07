@@ -53,10 +53,6 @@ int main(int argc, char **argv)
 
 	memset(&ctx, 0, sizeof(ctx));
 	memset(&ctx2, 0, sizeof(ctx2));
-	ctx.verbose = 1;
-	ctx2.verbose = 2;
-
-
 
 	while ((ch = getopt(argc, argv, "b:")) != -1) {
 
@@ -106,8 +102,8 @@ int main(int argc, char **argv)
 	test_ctx_exit(&ctx);
 
 	byte = 4097;
-	printf("\n= create %lu-byte mem on hugepage: success\n", byte);
-	test_ctx_init_will_success(&ctx, NULL, byte);
+	printf("\n= create %lu-byte mem on hugepage: fail\n", byte);
+	test_ctx_init_will_fail(&ctx, NULL, byte);
 	test_ctx_exit(&ctx);
 
 	byte = 4096;
