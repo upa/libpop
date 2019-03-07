@@ -71,7 +71,7 @@ void build_pkt(char *buf, int len, int id) {
 	udp = (struct udphdr*)(ip + 1);
 	udp->uh_ulen    = htons(len - sizeof(*eth) - sizeof(*ip));
 	udp->uh_dport   = htons(60000);
-	udp->uh_sport   = htons(id);
+	udp->uh_sport   = htons(id + 60000);
 	udp->uh_sum     = 0;
 }
 
@@ -90,7 +90,7 @@ int main(int argc, char **argv)
 	char *pci = NULL;
 	char *port = NULL;
 
-#define NUM_BUFS	16
+#define NUM_BUFS	8
 	pop_ctx_t ctx;
 	pop_buf_t *pbuf[NUM_BUFS];
 	pop_driver_t drv;
@@ -139,7 +139,7 @@ int main(int argc, char **argv)
 	}
 
 	/* xmit packet at bulk */
-	ret = pop_write(&drv, pbuf, NUM_BUFS, 1);
+	ret = pop_write(&drv, pbuf, NUM_BUFS, 0);
 	printf("%d packets xmitted\n", ret);
 
 	pop_driver_exit(&drv);

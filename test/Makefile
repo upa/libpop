@@ -1,7 +1,7 @@
 CC = gcc
 INCLUDE	:= -I../include
 LDFLAGS	:= -L../lib
-LDLIBS	:= -lpop
+LDLIBS	:= -lpop -lnetmap
 CFLAGS	:= -g -Wall $(INCLUDE)
 
 PROGNAME = test_ctx test_pbuf test_netmap_open test_netmap_write

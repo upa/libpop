@@ -2,8 +2,11 @@
 
 
 #define _GNU_SOURCE
+#include <stdlib.h>
+#include <errno.h>
 #include <sched.h>
 #include <poll.h>
+#include <sys/ioctl.h>
 
 #include <libpop.h>
 #include <libpop_util.h>
@@ -11,9 +14,7 @@
 
 #ifdef POP_DRIVER_NETMAP
 
-#define NETMAP_WITH_LIBS
-#include <net/netmap_user.h>
-
+#include <libnetmap.h>
 
 static int count_online_cpus(void)
 {
@@ -25,13 +26,16 @@ static int count_online_cpus(void)
         return -1;
 }
 
+
+
 /* describing netmap driver, pop_driver_t->data */
 struct pop_driver_netmap {
 	char devname[IFNAMSIZ];
-	struct nm_desc **d;	/* array of *nm_desc for all CPUs */
 
 	int ncpus;		/* number of cpus */
+	struct nmport_d	**nmport;	/* array of ncpus nmport_d * */
 };
+
 
 static int pop_driver_netmap_read(pop_driver_t *drv, pop_buf_t **pbufs,
 				  int nbufs, int qid)
@@ -48,7 +52,7 @@ static int pop_driver_netmap_read(pop_driver_t *drv, pop_buf_t **pbufs,
 		return -1;
 	}
 
-	ring = NETMAP_RXRING(nm->d[qid]->nifp, qid);
+	ring = NETMAP_RXRING(nm->nmport[qid]->nifp, qid);
 	if (nm_ring_empty(ring))
 		return 0;	/* no new received packet */
 
@@ -64,7 +68,7 @@ static int pop_driver_netmap_read(pop_driver_t *drv, pop_buf_t **pbufs,
 		ring->head = ring->cur = cur;
 	}
 
-	ret = ioctl(nm->d[qid]->fd, NIOCRXSYNC, NULL);
+	ret = ioctl(nm->nmport[qid]->fd, NIOCRXSYNC, NULL);
 	if (ret != 0) {
 		pr_ve("NIOCRXCYN failed");
 		return -1;
@@ -88,13 +92,11 @@ static int pop_driver_netmap_write(pop_driver_t *drv, pop_buf_t **pbufs,
 		return -1;
 	}
 
-	ring = NETMAP_TXRING(nm->d[qid]->nifp, qid);
+	ring = NETMAP_TXRING(nm->nmport[qid]->nifp, qid);
 	if (nm_ring_empty(ring))
 		return 0;	/* no txring buffer available */
 
 	budget = (nm_ring_space(ring) > nbufs) ? nbufs : nm_ring_space(ring);
-
-	printf("qid %d, nm_desc=%p, budget=%u\n", qid, nm->d[qid], budget);
 
 	for (n = 0; n < budget; n++) {
 		cur = ring->cur;
@@ -104,18 +106,16 @@ static int pop_driver_netmap_write(pop_driver_t *drv, pop_buf_t **pbufs,
 
 		printf("slot len = %u\n", ring->slot[cur].len);
 		printf("ptr  len = %lx\n", ring->slot[cur].ptr);
+		printf("cur      = %u\n", cur);
 
 		cur = nm_ring_next(ring, cur);
 		ring->head = ring->cur = cur;
 	}
 
-	int i;
-	for (i = 0; i < nm->ncpus; i++) {
-		ret = ioctl(nm->d[i]->fd, NIOCTXSYNC, NULL);
-		if (ret != 0) {
-			pr_ve("NIOCTXSYNC failed");
-			return -1;
-		}
+	ret = ioctl(nm->nmport[qid]->fd, NIOCTXSYNC, NULL);
+	if (ret != 0) {
+		pr_ve("NIOCTXSYNC failed");
+		return -1;
 	}
 
 	return n;
@@ -133,7 +133,7 @@ static int pop_driver_netmap_poll(pop_driver_t *drv, int qid)
 		return -1;
 	}
 
-	x[0].fd = nm->d[qid]->fd;
+	x[0].fd = nm->nmport[qid]->fd;
 	x[0].events = POLLIN;
 
 	return poll(x, 1, -1);
@@ -143,6 +143,7 @@ int pop_driver_netmap_init(pop_driver_t *drv, void *arg)
 {
 	int i;
 	char *devname = arg;
+	char nmportname[64];
 	struct pop_driver_netmap *nm;
 
 	nm = malloc(sizeof(*nm));
@@ -156,38 +157,34 @@ int pop_driver_netmap_init(pop_driver_t *drv, void *arg)
 
 	/* create netmap descriptor for all CPUs */
 	nm->ncpus = count_online_cpus();
-	nm->d = calloc(nm->ncpus, sizeof(struct nm_desc*));
-	if (!nm->d) {
-		pr_ve("failed to allocate memory for netmap descriptors");
+	nm->nmport = calloc(nm->ncpus, sizeof(struct nmport_d *));
+	if (!nm->nmport) {
+		pr_ve("failed to allocate memory for ");
 		return -1;
 	}
 
 	for (i = 0; i < nm->ncpus; i++) {
 
-		struct nm_desc nmd;
 		struct netmap_ring *ring;
 
-		memset(&nmd, 0, sizeof(struct nm_desc));
-		nmd.req.nr_flags |= NR_REG_ONE_NIC;
-		nmd.req.nr_ringid = i;
-		strncpy(nmd.req.nr_name, devname, IFNAMSIZ);
-
-		nm->d[i] = nm_open(devname, NULL, 0, &nmd);
-		if (!nm->d[i]) {
-			pr_ve("failed open nm_desc on ringid %d for %s",
-			      i, devname);
+		snprintf(nmportname, 64, "%s-%02d", devname, i);
+		nm->nmport[i] = nmport_open(nmportname);
+		if (!nm->nmport[i]) {
+			pr_ve("failed to open nmport %s", nmportname);
 			return -1;
 		}
 
 		/* XXX:
 		 * Round up RX ring. It is necessary for NS_PHY_INDRECT.
 		 */
-		ring = NETMAP_RXRING(nm->d[i]->nifp, i);
+		ring = NETMAP_RXRING(nm->nmport[i]->nifp, i);
 		ring->cur = ring->num_slots - 1;
 		ring->head = ring->num_slots - 1;
-		ioctl(nm->d[i]->fd, NIOCRXSYNC, NULL);
+		ioctl(nm->nmport[i]->fd, NIOCRXSYNC, NULL);
 
-		//pr_vs("%s: ringid=%d fd=%d", devname, i, nm->d[i]->fd);
+		pr_vs("%s: ringid=%d fd=%d", nmportname, i, nm->nmport[i]->fd);
+		pr_vs("cur_tx_ring is %u", nm->nmport[i]->cur_tx_ring);
+		pr_vs("cur_rx_ring is %u", nm->nmport[i]->cur_rx_ring);
 	}
 
 	drv->type = POP_DRIVER_TYPE_NETMAP;
@@ -215,7 +212,7 @@ int pop_driver_netmap_exit(pop_driver_t *drv)
 
 	/* close all nm_desc */
 	for (i = 0; i < nm->ncpus; i++)
-		nm_close(nm->d[i]);
+		nmport_close(nm->nmport[i]);
 
 	pr_vs("close netmap driver for %s", nm->devname);
 
