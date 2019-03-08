@@ -4,7 +4,8 @@ LDFLAGS	:= -L../lib
 LDLIBS	:= -lpop -lnetmap
 CFLAGS	:= -g -Wall $(INCLUDE)
 
-PROGNAME = test_ctx test_pbuf test_netmap_open test_netmap_write
+PROGNAME = test_ctx test_pbuf \
+	   test_netmap_open test_netmap_write test_netmap_read
 
 all: $(PROGNAME)
 

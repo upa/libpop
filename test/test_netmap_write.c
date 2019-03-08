@@ -81,16 +81,17 @@ void usage(void) {
 	printf("usage: ctx, testing pop_ctx_t\n"
 	       "    -b pci    PCI bus slot\n"
 	       "    -p port   netmap port\n"
-	       "    -l len    packet length\n");
+	       "    -l len    packet length\n"
+	       "    -q qid    queue id to xmit\n");
 }
 
 int main(int argc, char **argv)
 {
-	int ch, ret, n, len;
+	int ch, ret, n, len = 64, qid = 0;
 	char *pci = NULL;
 	char *port = NULL;
 
-#define NUM_BUFS	8
+#define NUM_BUFS	4
 	pop_ctx_t ctx;
 	pop_buf_t *pbuf[NUM_BUFS];
 	pop_driver_t drv;
@@ -98,7 +99,7 @@ int main(int argc, char **argv)
 	/* enable verbose log */
 	libpop_verbose_enable();
 
-	while ((ch = getopt(argc, argv, "b:p:l:")) != -1){
+	while ((ch = getopt(argc, argv, "b:p:l:q:")) != -1){
 
 		switch (ch) {
 		case 'b' :
@@ -109,6 +110,9 @@ int main(int argc, char **argv)
 			break;
 		case 'l':
 			len = atoi(optarg);
+			break;
+		case 'q':
+			qid = atoi(optarg);
 			break;
 		default:
 			usage();
@@ -139,7 +143,7 @@ int main(int argc, char **argv)
 	}
 
 	/* xmit packet at bulk */
-	ret = pop_write(&drv, pbuf, NUM_BUFS, 0);
+	ret = pop_write(&drv, pbuf, NUM_BUFS, qid);
 	printf("%d packets xmitted\n", ret);
 
 	pop_driver_exit(&drv);

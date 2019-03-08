@@ -4,3 +4,4 @@ test_ctx
 test_pbuf
 test_netmap_open
 test_netmap_write
+test_netmap_read
