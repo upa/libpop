@@ -1,3 +1,3 @@
 
 
-### BoogiePop: A library for Peripheral-to-Peripheral communication.
+## BoogiePop: A library for Peripheral-to-Peripheral communication
