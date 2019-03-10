@@ -10,6 +10,11 @@
 
 #include <libpop.h>
 
+#define NETMAP_WITH_LIBS
+#include <net/netmap_user.h>
+
+
+
 void hexdump(void *buf, int len)
 {
 	int n;
@@ -94,7 +99,6 @@ int main(int argc, char **argv)
 #define NUM_BUFS	4
 	pop_mem_t mem;
 	pop_buf_t *pbuf[NUM_BUFS];
-	pop_driver_t drv;
 
 	/* enable verbose log */
 	libpop_verbose_enable();
@@ -120,7 +124,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	/* allocate p2pmem on NoLoad */
+	/* allocate p2pmem */
 	ret = pop_mem_init(&mem, pci);
 	if (ret != 0) {
 		perror("pop_mem_init");
@@ -128,25 +132,45 @@ int main(int argc, char **argv)
 	assert(ret == 0);
 
 	/* open netmap port */
-	ret = pop_driver_init(&drv, POP_DRIVER_TYPE_NETMAP, port);
-	if (ret != 0) {
-		perror("pop_driver_init");
+	struct nm_desc base_nmd, *d;
+	char errmsg[64];
+	memset(&base_nmd, 0, sizeof(base_nmd));
+	nm_parse(port, &base_nmd, errmsg);
+	base_nmd.req.nr_ringid = qid;
+	base_nmd.req.nr_flags = NR_REG_ONE_NIC;
+
+	d = nm_open(port, NULL, NM_OPEN_IFNAME, &base_nmd);
+	if (!d) {
+		perror("nm_open failed\n");
+		return 1;
 	}
-	assert(ret == 0);
 
 	/* build packet */
 	for (n = 0; n < NUM_BUFS; n++) {
-		pbuf[n] = pop_buf_alloc(&mem, 4096);
+		pbuf[n] = pop_buf_alloc(&mem, 2048);
 		pop_buf_put(pbuf[n], len);
 		build_pkt(pop_buf_data(pbuf[n]), len, n);
 		hexdump(pop_buf_data(pbuf[n]), 128);
 	}
 
 	/* xmit packet at bulk */
-	ret = pop_write(&drv, pbuf, NUM_BUFS, qid);
-	printf("%d packets xmitted\n", ret);
+	struct netmap_ring *ring = NETMAP_TXRING(d->nifp, qid);
+	unsigned int head = ring->head;
 
-	pop_driver_exit(&drv);
+	for (n = 0; n < NUM_BUFS; n++) {
+		struct netmap_slot *slot = &ring->slot[head];
+		pop_nm_set_buf(slot, pbuf[n]);
+		head = nm_ring_next(ring, head);
+	}
+
+	ring->head = ring->cur = head;
+
+	while (nm_tx_pending(ring)) {
+                printf("pending=%d\n", nm_tx_pending(ring));
+                ioctl(d->fd, NIOCTXSYNC, NULL);
+                usleep(1);
+        }
+
 	pop_mem_exit(&mem);
 
 	return 0;

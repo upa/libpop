@@ -83,10 +83,6 @@ typedef struct pop_buf {
 
 	size_t		offset;	/* offset of data	*/
 	size_t		length;	/* length of data	*/
-
-	/* driver specific parameters */
-	uint64_t	lba;	/* Logical Address Block on NVMe	*/
-	int		ret;	/* pop_write/read ret value for this buf */
 } pop_buf_t;
 
 /* operating pop_buf like sk_buff */
@@ -105,50 +101,42 @@ void *pop_buf_push(pop_buf_t *pbuf, size_t len);
 
 /* debug use */
 void print_pop_buf(pop_buf_t *pbuf);
+uintptr_t virt_to_phys(void *addr);
 
 
+/***  netmap-related code ****/
+#include <net/if.h>
+#include <net/netmap.h>
 
+/*** For RX packets through netmap to p2p memory ***/
 
-/* driver and i/o operations */
-
-#define POP_DRIVER_TYPE_NETMAP	1
-#define	POP_DRIVER_TYPE_UNVME	2
-
-/* describing underlay driver */
-typedef struct pop_driver pop_driver_t;
-struct pop_driver {
-
-	int type;
-
-	int (*pop_driver_write)(pop_driver_t *drv, pop_buf_t **pbufs,
-				int nbufs, int qid);
-	int (*pop_driver_read)(pop_driver_t *drv, pop_buf_t **pbufs,
-			       int nbufs, int qid);
-	int (*pop_driver_poll)(pop_driver_t *drv, int qid);
-
-	void *data;
-
+struct pop_nm_rxring {
+	pop_buf_t		*pbuf;	/* p2pmem for this rxring */
+	struct netmap_ring	*ring;
 };
 
-int pop_driver_init(pop_driver_t *drv, int type, void *arg);
-int pop_driver_exit(pop_driver_t *drv);
+/* pop_nm_rxring_init: correlating netmap rx ring with p2p memory */
+struct pop_nm_rxring *pop_nm_rxring_init(int fd, struct netmap_ring *ring,
+					 pop_mem_t *mem);
+void pop_nm_rxring_exit(struct pop_nm_rxring *prxring);
 
-/*
- * pop_read/write()
- *
- * read/write data in pbuf from/to underlay driver. Retrusn value is
- * number of pbufs for read/write. Thus, ret < nbufs means underlay
- * driver has no more available data (read) or buffer (read). If any
- * error occurs, they return -1 and errno is set appropriately
- *
- * drv:	  driver structure describing underlay driver.
- * pbufs: an array of pop_buf_t.
- * nbufs: number of the array of pop_buf_t *.
- * qid:   queue id on underlay driver, e.g., NIC ring or NVMe SQ on CPU.
+/* pop_nm_rx_ring_buf: obtain packet buffer from rxring correlated to
+ * the p2p memory. note that 'idx' is not buf_idx in
+ * netmap_slot. index for the ring (usually, ring->head).
  */
-int pop_read(pop_driver_t *drv, pop_buf_t **pbufs, int nbufs, int qid);
-int pop_write(pop_driver_t *drv, pop_buf_t **pbufs, int nbufs, int qid);
-int pop_poll(pop_driver_t *drv, int qid); /* currently only for netmap */
+void *pop_nm_rxring_buf(struct pop_nm_rxring *prxring, unsigned int idx);
+
+/* pop_nm_ring: obtain netmap_ring from pop_nm_rxring */
+struct netmap_ring *pop_nm_ring(struct pop_nm_rxring *prxring);
+
+
+/*** For TX packets through netmap from p2p memory ***/
+
+/* pop_nm_set_buf: set p2p memory to specified netmap slot for TX */
+void pop_nm_set_buf(struct netmap_slot *slot, pop_buf_t *pbuf);
+
+
+
 
 #endif /* __KERNEL__ */
 #endif /* _LIBPOP_H_ */

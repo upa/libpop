@@ -32,8 +32,6 @@ void libpop_verbose_disable(void) {
 }
 
 /* prototypes for internal uses */
-static uintptr_t virt_to_phys(pop_mem_t *mem, void *addr);
-
 
 #define NR_HUGEPAGES \
 	"/sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages"
@@ -212,7 +210,7 @@ pop_buf_t *pop_buf_alloc(pop_mem_t *mem, size_t size)
 	memset(pbuf, 0, sizeof(*pbuf));
 	pbuf->mem	= mem;
 	pbuf->vaddr	= mem->mem + ((mem->alloced_pages << PAGE_SHIFT));
-	pbuf->paddr	= virt_to_phys(mem, pbuf->vaddr);
+	pbuf->paddr	= virt_to_phys(pbuf->vaddr);
 	pbuf->size	= nr_pages << PAGE_SHIFT;
 	pbuf->offset	= 0;
 	pbuf->length	= 0;
@@ -232,6 +230,11 @@ void pop_buf_free(pop_buf_t *pbuf)
 inline void *pop_buf_data(pop_buf_t *pbuf)
 {
 	return pbuf->vaddr + pbuf->offset;
+}
+
+inline uintptr_t pop_buf_paddr(pop_buf_t *pbuf)
+{
+	return pbuf->paddr + pbuf->offset;
 }
 
 inline void *pop_buf_put(pop_buf_t *pbuf, size_t len)
@@ -303,70 +306,9 @@ void print_pop_buf(pop_buf_t *pbuf)
 }
 
 
-/* pop driver initialization and i/o wrapper for driver specific i/o */
-#ifdef POP_DRIVER_NETMAP
-#include <pop_netmap.h>
-#endif
-
-int pop_driver_init(pop_driver_t *drv, int type, void *arg)
-{
-	switch(type) {
-
-#ifdef POP_DRIVER_NETMAP
-	case POP_DRIVER_TYPE_NETMAP:
-		return pop_driver_netmap_init(drv, arg);
-#endif
-
-	default:
-		pr_ve("invalid driver type %d", type);
-		errno = ENOTSUP;
-		return -EINVAL;
-	}
-
-	/* not reached */
-	return -1;
-}
-
-int pop_driver_exit(pop_driver_t *drv)
-{
-	switch(drv->type) {
-
-#ifdef POP_DRIVER_NETMAP
-	case POP_DRIVER_TYPE_NETMAP:
-		return pop_driver_netmap_exit(drv);
-#endif
-
-	default:
-		pr_ve("invalid driver type %d", drv->type);
-		errno = ENOTSUP;
-		return -EINVAL;
-	}
-
-	/* not reached */
-	return -1;
-}
-
-int pop_read(pop_driver_t *drv, pop_buf_t **pbufs, int nbufs, int qid)
-{
-	return drv->pop_driver_read(drv, pbufs, nbufs, qid);
-}
-
-int pop_write(pop_driver_t *drv, pop_buf_t **pbufs, int nbufs, int qid)
-{
-	return drv->pop_driver_write(drv, pbufs, nbufs, qid);
-}
 
 
-
-/* internal uses */
-
-inline uintptr_t pop_buf_paddr(pop_buf_t *pbuf)
-{
-	return pbuf->paddr + pbuf->offset;
-}
-
-
-static uintptr_t virt_to_phys(pop_mem_t *mem, void *addr)
+uintptr_t virt_to_phys(void *addr)
 {
 	int fd;
 	long pagesize;
