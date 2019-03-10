@@ -191,16 +191,13 @@ int pop_mem_exit(pop_mem_t *mem)
 pop_buf_t *pop_buf_alloc(pop_mem_t *mem, size_t size)
 {
 	pop_buf_t *pbuf;
+	size_t nr_pages;
 
 	/* XXX: should lock! */
 
-	/* validation */
-	if (size % (1 << PAGE_SHIFT) || size < (1 << PAGE_SHIFT)) {
-		pr_ve("size must be power of %d", 1 << PAGE_SHIFT);
-		return NULL;
-	}
-	    
-	if ((mem->num_pages - mem->alloced_pages) < (size >> PAGE_SHIFT)) {
+	for (nr_pages = 0; (nr_pages << PAGE_SHIFT) < size; nr_pages++);
+
+	if ((mem->num_pages - mem->alloced_pages) < nr_pages) {
 		pr_ve("no page available on %s", mem->devname);
 		errno = ENOBUFS;
 		return NULL;
@@ -216,11 +213,11 @@ pop_buf_t *pop_buf_alloc(pop_mem_t *mem, size_t size)
 	pbuf->mem	= mem;
 	pbuf->vaddr	= mem->mem + ((mem->alloced_pages << PAGE_SHIFT));
 	pbuf->paddr	= virt_to_phys(mem, pbuf->vaddr);
-	pbuf->size	= size;
+	pbuf->size	= nr_pages << PAGE_SHIFT;
 	pbuf->offset	= 0;
 	pbuf->length	= 0;
 
-	mem->alloced_pages += size >> PAGE_SHIFT;
+	mem->alloced_pages += nr_pages;
 
 	return pbuf;
 }

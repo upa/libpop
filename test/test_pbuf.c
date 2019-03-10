@@ -17,7 +17,7 @@ int main(int argc, char **argv)
 	int ch, ret, n;
 	char *pci = NULL;
 
-#define NUM_BUFS	8
+#define NUM_BUFS	4
 	pop_mem_t mem;
 	pop_buf_t *pbuf[NUM_BUFS];
 
@@ -43,8 +43,23 @@ int main(int argc, char **argv)
 	assert(ret == 0);
 	
 	/* allocate pbuf */
+
+	printf("allocate 4096byte pbuf\n");
 	for (n = 0; n < NUM_BUFS; n++) {
 		pbuf[n] = pop_buf_alloc(&mem, 4096);
+		pop_buf_put(pbuf[n], 1 << n);
+		pop_buf_pull(pbuf[n], n);
+
+		printf("\nAlloced pbuf %d\n", n);
+		print_pop_buf(pbuf[n]);
+	}
+
+	printf("\n\n");
+
+	/* allocate pbuf */
+	printf("allocate 8192byte pbuf");
+	for (n = 0; n < NUM_BUFS; n++) {
+		pbuf[n] = pop_buf_alloc(&mem, 8192);
 		pop_buf_put(pbuf[n], 1 << n);
 		pop_buf_pull(pbuf[n], n);
 
