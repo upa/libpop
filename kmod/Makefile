@@ -2,7 +2,7 @@ KERNELSRCDIR := /lib/modules/$(shell uname -r)/build
 BUILD_DIR := $(shell pwd)
 VERBOSE = 0
 
-obj-m := pop.o
+obj-m := boogiepop.o
 
 ccflags-y := -I$(src)/../include/
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * pop.c
+ * boogiepop.c: A library for Peripheral-to-Peripheral communication.
  */
 
 #include <linux/kernel.h>
@@ -45,11 +45,11 @@ struct pop_dev {
 	atomic_t		refcnt;
 };
 
-/* structure describing libpop kernel module */
-struct pop {
+/* structure describing boogiepop kernel module */
+struct boogiepop {
 	struct list_head	dev_list;	/* list of pop_dev */
 };
-static struct pop pop;
+static struct boogiepop pop;
 
 static struct pop_dev *pop_find_dev(struct pci_dev *pdev)
 {
