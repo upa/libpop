@@ -22,6 +22,9 @@ struct pop_p2pmem_reg {
 	int	bus;
 	int	slot;
 	int	func;
+
+	/* parameters that kernel returns */
+	size_t	size;
 };
 
 #define POP_P2PMEM_REG		_IOW('i', 1, struct pop_p2pmem_reg)
@@ -82,7 +85,7 @@ typedef struct pop_buf {
 	size_t		length;	/* length of data	*/
 
 	/* driver specific parameters */
-	uint64_t	lba;	/* Logical Address Block on NVMe*/
+	uint64_t	lba;	/* Logical Address Block on NVMe	*/
 	int		ret;	/* pop_write/read ret value for this buf */
 } pop_buf_t;
 

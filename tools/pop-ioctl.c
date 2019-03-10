@@ -76,5 +76,7 @@ int main(int argc, char **argv) {
 		return ret;
 	}
 
+	printf("%lu byte registered\n", reg.size);
+
 	return 0;
 }

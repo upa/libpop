@@ -281,7 +281,7 @@ static int pop_release(struct inode *inode, struct file *filp)
 
 static long pop_ioctl(struct file *filp, unsigned int cmd, unsigned long data)
 {
-	int ret = 0;
+	int ret = 0, size;
 	struct pop_p2pmem_reg reg;
 	struct pci_dev *pdev;
 	struct pop_dev *ppdev;
@@ -309,9 +309,18 @@ static long pop_ioctl(struct file *filp, unsigned int cmd, unsigned long data)
 			goto dev_put_out;
 		}
 
-		ret = pop_register_p2pmem(pdev);
-		if (ret)
+		size = pop_register_p2pmem(pdev);
+		if (size < 0)
 			goto dev_put_out;
+
+		reg.size = size;
+		if (copy_to_user((void *)data, &reg, sizeof(reg)) != 0) {
+			pr_err("%s: copy_to_user failed\n", __func__);
+			ret = -EFAULT;
+			goto dev_put_out;
+		}
+
+		ret = 0;
 		break;
 
 	case POP_P2PMEM_UNREG:
