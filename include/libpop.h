@@ -22,9 +22,6 @@ struct pop_p2pmem_reg {
 	int	bus;
 	int	slot;
 	int	func;
-
-	/* information for p2pmem region */
-	size_t	size;
 };
 
 #define POP_P2PMEM_REG		_IOW('i', 1, struct pop_p2pmem_reg)

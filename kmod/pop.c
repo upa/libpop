@@ -9,9 +9,19 @@
 #include <linux/uaccess.h>
 #include <linux/pci.h>
 #include <linux/miscdevice.h>
+#include <linux/genalloc.h>
 #include <linux/pci-p2pdma.h>
 
 #include <libpop.h>
+
+/* XXX: define struct pci_p2pdma, wichi is defined in the local scope
+ * of p2pdma.c, in this scope. to get size of p2pmem. */
+struct pci_p2pdma {
+        struct percpu_ref devmap_ref;
+        struct completion devmap_ref_done;
+        struct gen_pool *pool;
+        bool p2pmem_published;
+};
 
 #ifdef pr_fmt
 #undef pr_fmt
@@ -188,28 +198,30 @@ static const struct file_operations pop_dev_fops = {
 	.release	= pop_dev_release,
 };
 
-static int pop_register_p2pmem(struct pci_dev *pdev, size_t size)
+static int pop_register_p2pmem(struct pci_dev *pdev)
 {
-	/* allocate 'size'-byte p2pmem from pdev, register miscdevice
-	 * for the p2pmem, and register pop_dev to pop.dev_list
+	/* allocate 'all' p2pmem from pdev, register miscdevice
+	 * for the p2pmem, and register pop_dev to pop.dev_list.
+	 * Return value is allocated size;
 	 */
 
 	int ret;
 	void *p2pmem;
+	size_t size = 0;
 	struct pop_dev *ppdev;
 
 	if (pop_find_dev(pdev)) {
-		pr_warn("device %04x:%02x:%02x.%x is already registered\n",
-		       pci_domain_nr(pdev->bus), pdev->bus->number,
-		       PCI_SLOT(pdev->devfn), PCI_SLOT(pdev->devfn));
+		pr_warn("device %s is already registered\n", pci_name(pdev));
 		return 0;
 	}
 
+	if (pdev->p2pdma->pool)
+		size = gen_pool_size(pdev->p2pdma->pool);
+
 	p2pmem = pci_alloc_p2pmem(pdev, size);
 	if (!p2pmem) {
-		pr_err("failed to alloc %luB p2pmem from  %04x:%02x:%02x.%x\n",
-		       size, pci_domain_nr(pdev->bus), pdev->bus->number,
-		       PCI_SLOT(pdev->devfn), PCI_FUNC(pdev->devfn));
+		pr_err("failed to alloc %luB p2pmem from %s\n",
+		       size, pci_name(pdev));
 		return -ENOMEM;
 	}
 
@@ -222,9 +234,7 @@ static int pop_register_p2pmem(struct pci_dev *pdev, size_t size)
 
 	memset(ppdev, 0, sizeof(*ppdev));
 	INIT_LIST_HEAD(&ppdev->list);
-	snprintf(ppdev->devname, DEVNAMELEN, "pop/%04x:%02x:%02x.%x",
-		 pci_domain_nr(pdev->bus), pdev->bus->number,
-		 PCI_SLOT(pdev->devfn), PCI_FUNC(pdev->devfn));
+	snprintf(ppdev->devname, DEVNAMELEN, "pop/%s", pci_name(pdev));
 	ppdev->pdev		= pdev;
 	ppdev->p2pmem		= p2pmem;
 	ppdev->size		= size;
@@ -244,8 +254,7 @@ static int pop_register_p2pmem(struct pci_dev *pdev, size_t size)
 
 	pr_info("/dev/%s with %luB p2pmem registered\n",
 		ppdev->devname, ppdev->size);
-
-	return 0;
+	return size;
 }
 
 static void pop_unregister_p2pmem(struct pop_dev *ppdev)
@@ -284,12 +293,6 @@ static long pop_ioctl(struct file *filp, unsigned int cmd, unsigned long data)
 			return -EFAULT;
 		}
 
-		if (reg.size < (1 << PAGE_SHIFT) ||
-		    reg.size % (1 << PAGE_SHIFT) != 0) {
-			pr_err("size must be power of %d\n", 1 << PAGE_SHIFT);
-			return -EINVAL;
-		}
-
 		pdev = pci_get_domain_bus_and_slot(reg.domain, reg.bus,
 						   PCI_DEVFN(reg.slot,
 							     reg.func));
@@ -306,7 +309,7 @@ static long pop_ioctl(struct file *filp, unsigned int cmd, unsigned long data)
 			goto dev_put_out;
 		}
 
-		ret = pop_register_p2pmem(pdev, reg.size);
+		ret = pop_register_p2pmem(pdev);
 		if (ret)
 			goto dev_put_out;
 		break;

@@ -14,8 +14,7 @@
 void usage(void) {
 	printf("usage: pop-ioctl\n"
 	       "    -b pci     PCI slot\n"
-	       "    -c cmd     regigster or unregister\n"
-	       "    -s size    size of allocating p2pmem\n");
+	       "    -c cmd     regigster or unregister\n");
 }
 
 int main(int argc, char **argv) {
@@ -25,7 +24,7 @@ int main(int argc, char **argv) {
 
 	memset(&reg, 0, sizeof(reg));
 
-	while((ch = getopt(argc, argv, "b:c:s:")) != -1) {
+	while((ch = getopt(argc, argv, "b:c:")) != -1) {
 		switch(ch) {
 		case 'b':
 			ret = sscanf(optarg, "%x:%x:%x.%x",
@@ -51,10 +50,6 @@ int main(int argc, char **argv) {
 				fprintf(stderr, "invalid cmd %s\n", optarg);
 				return -1;
 			}
-			break;
-
-		case 's':
-			reg.size = atoi(optarg);
 			break;
 
 		default:
