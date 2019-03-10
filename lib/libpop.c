@@ -19,7 +19,7 @@
 #include <libpop_util.h>
 
 #define PROGNAME	"libpop"
-#define DEVPOP		"/dev/pop/pop"
+#define DEVPOP		"/dev/boogiepop"
 
 int libpop_verbose = 0;	/* global in libpop */
 

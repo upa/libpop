@@ -64,9 +64,9 @@ int main(int argc, char **argv) {
 	}
 
 	
-	fd = open("/dev/pop/pop", O_RDWR);
+	fd = open("/dev/boogiepop", O_RDWR);
 	if (fd < 0) {
-		perror("failed to open /dev/pop/pop");
+		perror("failed to open /dev/boogiepop");
 		return fd;
 	}
 

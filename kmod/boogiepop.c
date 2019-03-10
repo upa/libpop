@@ -370,7 +370,7 @@ static const struct file_operations pop_fops = {
 
 static struct miscdevice pop_mdev = {
 	.minor	= MISC_DYNAMIC_MINOR,
-	.name	= "pop/pop",
+	.name	= "boogiepop",
 	.fops	= &pop_fops,
 };
 
