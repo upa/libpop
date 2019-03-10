@@ -179,7 +179,7 @@ static int pop_dev_mmap(struct file *filp, struct vm_area_struct *vma)
 		return -EINVAL;
 	}
 
-	pr_debug("%s: offset is %lu, length is %lu\n", __func__, off, len);
+	pr_info("%s: offset is %lu, length is %lu\n", __func__, off, len);
 	if (off + len > ppdev->size) {
 		pr_err("%s: len %lu is larger than p2pmem size %lu of %s\n",
 		       __func__, len,  ppdev->size, ppdev->devname);
@@ -210,9 +210,9 @@ static int pop_register_p2pmem(struct pci_dev *pdev)
 	size_t size = 0;
 	struct pop_dev *ppdev;
 
-	if (pop_find_dev(pdev)) {
+	if ((ppdev = pop_find_dev(pdev))) {
 		pr_warn("device %s is already registered\n", pci_name(pdev));
-		return 0;
+		return ppdev->size;
 	}
 
 	if (pdev->p2pdma->pool)

@@ -76,7 +76,8 @@ int main(int argc, char **argv) {
 		return ret;
 	}
 
-	printf("%lu byte registered\n", reg.size);
+	if (cmd == POP_P2PMEM_REG)
+		printf("%lu byte registered\n", reg.size);
 
 	return 0;
 }

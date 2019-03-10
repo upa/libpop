@@ -67,7 +67,7 @@ typedef struct pop_mem {
  * dev:  string for PCI slot num, or NULL means hugepages.
  * size: size of allocated memory (must be power of page size).
  */
-int pop_mem_init(pop_mem_t *mem, char *dev, size_t size);
+int pop_mem_init(pop_mem_t *mem, char *dev);
 int pop_mem_exit(pop_mem_t *mem);
 
 

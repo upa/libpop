@@ -43,7 +43,7 @@ int main(int argc, char **argv)
 	}
 
 	/* allocate p2pmem on NoLoad */
-	ret = pop_mem_init(&mem, pci, 4096 * NUM_BUFS);
+	ret = pop_mem_init(&mem, pci);
 	if (ret != 0) {
 		perror("pop_mem_init");
 	}

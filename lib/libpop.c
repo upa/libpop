@@ -35,9 +35,29 @@ void libpop_verbose_disable(void) {
 static uintptr_t virt_to_phys(pop_mem_t *mem, void *addr);
 
 
-/* context operations  */
+#define NR_HUGEPAGES \
+	"/sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages"
+#define HUGEPAGE_SIZE (2 * 1024 * 1024)
+	
 
-int pop_mem_init(pop_mem_t *mem, char *dev, size_t size)
+static int get_nr_hugepages(void)
+{
+	int fd;
+	char buf[16];
+
+	fd = open(NR_HUGEPAGES, O_RDONLY);
+	if (fd < 0) {
+		pr_ve("failed to open %s", NR_HUGEPAGES);
+		return -1;
+	}
+
+	read(fd, buf, sizeof(buf));
+	return atoi(buf);
+}
+
+/* memory operations  */
+
+int pop_mem_init(pop_mem_t *mem, char *dev)
 {
 	/*
 	 * register dev and its p2pmem through /dev/pop/pop
@@ -47,23 +67,27 @@ int pop_mem_init(pop_mem_t *mem, char *dev, size_t size)
 	char popdev[32];
 
 	/* validation */
-	if (size % (1 << PAGE_SHIFT) || size < (1 << PAGE_SHIFT)) {
-		pr_ve("size must be power of %d", 1 << PAGE_SHIFT);
-		errno = EINVAL;
-		return -1;
-	}
-
 	memset(mem, 0, sizeof(*mem));
-	mem->size	= size;
-	mem->num_pages	= size >> PAGE_SHIFT;
 
 	if (dev == NULL) {
-		/* hugepage */
+		/* allocate all hugepages  */
+		int nr_pages;
+
 		strncpy(mem->devname, "hugepage", POP_PCI_DEVNAME_MAX);
+
+		nr_pages  = get_nr_hugepages();
+		if (nr_pages < 0) {
+			pr_ve("failed to get num of hugepages");
+			return -1;
+		}
+
 		flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_LOCKED | MAP_HUGETLB;
+		printf("hugepage num is %d\n", nr_pages);
+		mem->size = 2 * 1024 * 1024 * (nr_pages / 4) ;
+		mem->num_pages = mem->size >> PAGE_SHIFT; /* 4kb align */
 		mem->fd = -1;
 	} else {
-		/* pop device. register it to /dev/pop/pop */
+		/* pop device. register it through /dev/pop/pop */
 		strncpy(mem->devname, dev, POP_PCI_DEVNAME_MAX);
 		ret = sscanf(dev, "%x:%x:%x.%x",
 			     &mem->reg.domain, &mem->reg.bus,
@@ -80,8 +104,6 @@ int pop_mem_init(pop_mem_t *mem, char *dev, size_t size)
 			return -1;
 		}
 
-		mem->reg.size = size;
-
 		fd = open(DEVPOP, O_RDWR);
 		if (fd < 0) {
 			pr_ve("failed to open %s", DEVPOP);
@@ -96,7 +118,6 @@ int pop_mem_init(pop_mem_t *mem, char *dev, size_t size)
 		}
 		close(fd);
 
-
 		/* open /dev/pop/PCI_DEV for mmap() */
 		snprintf(popdev, sizeof(popdev), "/dev/pop/%04x:%02x:%02x.%x",
 			 mem->reg.domain, mem->reg.bus,
@@ -108,7 +129,8 @@ int pop_mem_init(pop_mem_t *mem, char *dev, size_t size)
 		}
 
 		flags = MAP_LOCKED | MAP_SHARED;
-		
+		mem->size = mem->reg.size;		
+		mem->num_pages = mem->size >> PAGE_SHIFT;
 	}
 	
 	/* XXX: handle offset */
@@ -120,6 +142,8 @@ int pop_mem_init(pop_mem_t *mem, char *dev, size_t size)
 			close(mem->fd);
 		return -1;
 	}
+
+	pr_vs("%lu-byte mmaped on %s", mem->size, mem->devname);
 
 	return 0;
 }
