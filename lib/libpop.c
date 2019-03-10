@@ -32,12 +32,12 @@ void libpop_verbose_disable(void) {
 }
 
 /* prototypes for internal uses */
-static uintptr_t virt_to_phys(pop_ctx_t *ctx, void *addr);
+static uintptr_t virt_to_phys(pop_mem_t *mem, void *addr);
 
 
 /* context operations  */
 
-int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size)
+int pop_mem_init(pop_mem_t *mem, char *dev, size_t size)
 {
 	/*
 	 * register dev and its p2pmem through /dev/pop/pop
@@ -53,26 +53,26 @@ int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size)
 		return -1;
 	}
 
-	memset(ctx, 0, sizeof(*ctx));
-	ctx->size	= size;
-	ctx->num_pages	= size >> PAGE_SHIFT;
+	memset(mem, 0, sizeof(*mem));
+	mem->size	= size;
+	mem->num_pages	= size >> PAGE_SHIFT;
 
 	if (dev == NULL) {
 		/* hugepage */
-		strncpy(ctx->devname, "hugepage", POP_PCI_DEVNAME_MAX);
+		strncpy(mem->devname, "hugepage", POP_PCI_DEVNAME_MAX);
 		flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_LOCKED | MAP_HUGETLB;
-		ctx->fd = -1;
+		mem->fd = -1;
 	} else {
 		/* pop device. register it to /dev/pop/pop */
-		strncpy(ctx->devname, dev, POP_PCI_DEVNAME_MAX);
+		strncpy(mem->devname, dev, POP_PCI_DEVNAME_MAX);
 		ret = sscanf(dev, "%x:%x:%x.%x",
-			     &ctx->reg.domain, &ctx->reg.bus,
-			     &ctx->reg.slot, &ctx->reg.func);
+			     &mem->reg.domain, &mem->reg.bus,
+			     &mem->reg.slot, &mem->reg.func);
 		if (ret < 4) {
-			ctx->reg.domain = 0;
+			mem->reg.domain = 0;
 			ret = sscanf(dev, "%x:%x.%x",
-				     &ctx->reg.bus,
-				     &ctx->reg.slot, &ctx->reg.func);
+				     &mem->reg.bus,
+				     &mem->reg.slot, &mem->reg.func);
 		}
 		if (ret < 3) {
 			pr_ve("invalid pci slot %s", dev);
@@ -80,7 +80,7 @@ int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size)
 			return -1;
 		}
 
-		ctx->reg.size = size;
+		mem->reg.size = size;
 
 		fd = open(DEVPOP, O_RDWR);
 		if (fd < 0) {
@@ -88,7 +88,7 @@ int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size)
 			return -1;
 		}
 
-		ret = ioctl(fd, POP_P2PMEM_REG, &ctx->reg);
+		ret = ioctl(fd, POP_P2PMEM_REG, &mem->reg);
 		if (ret != 0) {
 			pr_ve("failed to register p2pmem on %s", dev);
 			close(fd);
@@ -99,10 +99,10 @@ int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size)
 
 		/* open /dev/pop/PCI_DEV for mmap() */
 		snprintf(popdev, sizeof(popdev), "/dev/pop/%04x:%02x:%02x.%x",
-			 ctx->reg.domain, ctx->reg.bus,
-			 ctx->reg.slot, ctx->reg.func);
-		ctx->fd = open(popdev, O_RDWR);
-		if (ctx->fd < 0) {
+			 mem->reg.domain, mem->reg.bus,
+			 mem->reg.slot, mem->reg.func);
+		mem->fd = open(popdev, O_RDWR);
+		if (mem->fd < 0) {
 			pr_ve("failed to open %s", popdev);
 			return -1;
 		}
@@ -112,12 +112,12 @@ int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size)
 	}
 	
 	/* XXX: handle offset */
-	ctx->mem = mmap(0, ctx->size, PROT_READ | PROT_WRITE,
-			flags, ctx->fd, 0);
-	if (ctx->mem == MAP_FAILED) {
-		pr_ve("failed to mmap on %s", ctx->devname);
-		if (ctx->fd != -1)
-			close(ctx->fd);
+	mem->mem = mmap(0, mem->size, PROT_READ | PROT_WRITE,
+			flags, mem->fd, 0);
+	if (mem->mem == MAP_FAILED) {
+		pr_ve("failed to mmap on %s", mem->devname);
+		if (mem->fd != -1)
+			close(mem->fd);
 		return -1;
 	}
 
@@ -125,19 +125,19 @@ int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size)
 }
 
 
-int pop_ctx_exit(pop_ctx_t *ctx)
+int pop_mem_exit(pop_mem_t *mem)
 {
 	/* unregister dev and its p2pmem through /dev/pop/pop */
 	
 	int ret, fd;
 
-	if (ctx->fd == -1) {
+	if (mem->fd == -1) {
 		/* hugepage */
 #if 0
 		/* XXX: should munmap, but it fails... */
-		ret = munmap(ctx->mem, ctx->size);
+		ret = munmap(mem->mem, mem->size);
 		if (ret != 0) {
-			pr_ve("failed to munmap on %s", ctx->devname);
+			pr_ve("failed to munmap on %s", mem->devname);
 			return -1;
 		}
 #endif
@@ -150,12 +150,12 @@ int pop_ctx_exit(pop_ctx_t *ctx)
 			return -1;
 		}
 
-		ret = ioctl(fd, POP_P2PMEM_UNREG, &ctx->reg);
+		ret = ioctl(fd, POP_P2PMEM_UNREG, &mem->reg);
 		if (ret != 0) {
-			pr_ve("failed to unregister %s", ctx->devname);
+			pr_ve("failed to unregister %s", mem->devname);
 			return -1;
 		}
-		return close(ctx->fd);
+		return close(mem->fd);
 	}
 
 	return 0;
@@ -164,7 +164,7 @@ int pop_ctx_exit(pop_ctx_t *ctx)
 
 /* pop_buf operations */
 
-pop_buf_t *pop_buf_alloc(pop_ctx_t *ctx, size_t size)
+pop_buf_t *pop_buf_alloc(pop_mem_t *mem, size_t size)
 {
 	pop_buf_t *pbuf;
 
@@ -176,8 +176,8 @@ pop_buf_t *pop_buf_alloc(pop_ctx_t *ctx, size_t size)
 		return NULL;
 	}
 	    
-	if ((ctx->num_pages - ctx->alloced_pages) < (size >> PAGE_SHIFT)) {
-		pr_ve("no page available on %s", ctx->devname);
+	if ((mem->num_pages - mem->alloced_pages) < (size >> PAGE_SHIFT)) {
+		pr_ve("no page available on %s", mem->devname);
 		errno = ENOBUFS;
 		return NULL;
 	}
@@ -189,14 +189,14 @@ pop_buf_t *pop_buf_alloc(pop_ctx_t *ctx, size_t size)
 	}
 
 	memset(pbuf, 0, sizeof(*pbuf));
-	pbuf->ctx	= ctx;
-	pbuf->vaddr	= ctx->mem + ((ctx->alloced_pages << PAGE_SHIFT));
-	pbuf->paddr	= virt_to_phys(ctx, pbuf->vaddr);
+	pbuf->mem	= mem;
+	pbuf->vaddr	= mem->mem + ((mem->alloced_pages << PAGE_SHIFT));
+	pbuf->paddr	= virt_to_phys(mem, pbuf->vaddr);
 	pbuf->size	= size;
 	pbuf->offset	= 0;
 	pbuf->length	= 0;
 
-	ctx->alloced_pages += size >> PAGE_SHIFT;
+	mem->alloced_pages += size >> PAGE_SHIFT;
 
 	return pbuf;
 }
@@ -271,9 +271,9 @@ inline size_t pop_buf_len(pop_buf_t *pbuf)
 /* for debaug use */
 void print_pop_buf(pop_buf_t *pbuf)
 {
-	fprintf(stderr, "ctx:              %p\n", pbuf->ctx);
-	fprintf(stderr, " - devname:       %s\n", pbuf->ctx->devname);
-	fprintf(stderr, " - alloced_pages: %lu\n", pbuf->ctx->alloced_pages);
+	fprintf(stderr, "mem:              %p\n", pbuf->mem);
+	fprintf(stderr, " - devname:       %s\n", pbuf->mem->devname);
+	fprintf(stderr, " - alloced_pages: %lu\n", pbuf->mem->alloced_pages);
 	fprintf(stderr, "vaddr:            %p\n", pbuf->vaddr);
 	fprintf(stderr, "paddr:            0x%lx\n", pbuf->paddr);
 	fprintf(stderr, "size:             %lu\n", pbuf->size);
@@ -345,7 +345,7 @@ inline uintptr_t pop_buf_paddr(pop_buf_t *pbuf)
 }
 
 
-static uintptr_t virt_to_phys(pop_ctx_t *ctx, void *addr)
+static uintptr_t virt_to_phys(pop_mem_t *mem, void *addr)
 {
 	int fd;
 	long pagesize;

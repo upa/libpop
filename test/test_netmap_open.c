@@ -8,7 +8,7 @@
 
 void usage(void) {
 
-	printf("usage: ctx, testing pop_ctx_t\n"
+	printf("usage: mem, testing pop_mem_t\n"
 	       "    -b pci    PCI bus slot\n"
 	       "    -p port   netmap port\n");
 }
@@ -20,7 +20,7 @@ int main(int argc, char **argv)
 	char *port = NULL;
 
 #define NUM_BUFS	16
-	pop_ctx_t ctx;
+	pop_mem_t mem;
 	//pop_buf_t *pbuf[NUM_BUFS];
 	pop_driver_t drv;
 
@@ -43,9 +43,9 @@ int main(int argc, char **argv)
 	}
 
 	/* allocate p2pmem on NoLoad */
-	ret = pop_ctx_init(&ctx, pci, 4096 * NUM_BUFS);
+	ret = pop_mem_init(&mem, pci, 4096 * NUM_BUFS);
 	if (ret != 0) {
-		perror("pop_ctx_init");
+		perror("pop_mem_init");
 	}
 	assert(ret == 0);
 
@@ -57,7 +57,7 @@ int main(int argc, char **argv)
 	assert(ret == 0);
 
 	pop_driver_exit(&drv);
-	pop_ctx_exit(&ctx);
+	pop_mem_exit(&mem);
 
 	return 0;
 }

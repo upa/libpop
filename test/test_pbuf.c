@@ -8,7 +8,7 @@
 
 void usage(void) {
 
-	printf("usage: ctx, testing pop_ctx_t\n"
+	printf("usage: mem, testing pop_mem_t\n"
 	       "    -b pci    PCI bus slot\n");
 }
 
@@ -18,7 +18,7 @@ int main(int argc, char **argv)
 	char *pci = NULL;
 
 #define NUM_BUFS	8
-	pop_ctx_t ctx;
+	pop_mem_t mem;
 	pop_buf_t *pbuf[NUM_BUFS];
 
 	libpop_verbose_enable();
@@ -36,15 +36,15 @@ int main(int argc, char **argv)
 	}
 
 	/* allocate p2pmem on NoLoad */
-	ret = pop_ctx_init(&ctx, pci, 4096 * NUM_BUFS * 2);
+	ret = pop_mem_init(&mem, pci, 4096 * NUM_BUFS * 2);
 	if (ret != 0) {
-		perror("pop_ctx_init");
+		perror("pop_mem_init");
 	}
 	assert(ret == 0);
 	
 	/* allocate pbuf */
 	for (n = 0; n < NUM_BUFS; n++) {
-		pbuf[n] = pop_buf_alloc(&ctx, 4096);
+		pbuf[n] = pop_buf_alloc(&mem, 4096);
 		pop_buf_put(pbuf[n], 1 << n);
 		pop_buf_pull(pbuf[n], n);
 
@@ -57,5 +57,5 @@ int main(int argc, char **argv)
 		pop_buf_free(pbuf[n]);
 	}
 
-	pop_ctx_exit(&ctx);
+	pop_mem_exit(&mem);
 }

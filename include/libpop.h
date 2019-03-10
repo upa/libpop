@@ -44,7 +44,7 @@ void libpop_verbose_disable(void);
 
 /* structure describing pop p2pmem context */
 #define POP_PCI_DEVNAME_MAX	16
-typedef struct pop_ctx {
+typedef struct pop_mem {
 	int	fd;			/* fd for ioctl and mmap	*/
 	char	devname[POP_PCI_DEVNAME_MAX];	/* '\0' means hugepage	*/
 	struct pop_p2pmem_reg reg;	/* reg for ioctl		*/
@@ -53,29 +53,29 @@ typedef struct pop_ctx {
 	size_t	size;			/* size of allocated region	*/
 	size_t	num_pages;		/* # of pages 		*/
 	size_t	alloced_pages;       	/* # of allocated pages	*/
-} pop_ctx_t;
+} pop_mem_t;
 
 
 /*
- * pop_ctx_init()
+ * pop_mem_init()
  *
- * Register p2pmem pci device or hugepage into libpop context. On
- * success, zero is returned. On error, -1 is returned, and errno is
- * set appropriately.
+ * Register p2pmem pci device or hugepage into libpop memory
+ * context. On success, zero is returned. On error, -1 is returned,
+ * and errno is set appropriately.
  *
- * ctx:  libpop context.
+ * mem:  libpop memory context.
  * dev:  string for PCI slot num, or NULL means hugepages.
  * size: size of allocated memory (must be power of page size).
  */
-int pop_ctx_init(pop_ctx_t *ctx, char *dev, size_t size);
-int pop_ctx_exit(pop_ctx_t *ctx);
+int pop_mem_init(pop_mem_t *mem, char *dev, size_t size);
+int pop_mem_exit(pop_mem_t *mem);
 
 
 
 
 /* structure describing pop buffer on p2pmem */
 typedef struct pop_buf {
-	pop_ctx_t	*ctx;	/* parent pop context  */
+	pop_mem_t	*mem;	/* parent pop context  */
 
 	void		*vaddr;	/* virtual address on mmap region	*/
 	uintptr_t	paddr;	/* physical addres of the vaddr		*/
@@ -90,7 +90,7 @@ typedef struct pop_buf {
 } pop_buf_t;
 
 /* operating pop_buf like sk_buff */
-pop_buf_t *pop_buf_alloc(pop_ctx_t *ctx, size_t size);
+pop_buf_t *pop_buf_alloc(pop_mem_t *mem, size_t size);
 void pop_buf_free(pop_buf_t *pbuf);
 
 void *pop_buf_data(pop_buf_t *pbuf);
@@ -132,18 +132,6 @@ struct pop_driver {
 
 int pop_driver_init(pop_driver_t *drv, int type, void *arg);
 int pop_driver_exit(pop_driver_t *drv);
-
-/*
- * pop_ctx_init()
- *
- * Register p2pmem pci device or hugepage into libpop context. On
- * success, zero is returned. On error, -1 is returned, and errno is
- * set appropriately.
- *
- * ctx: libpop context.
- * dev: string for PCI slot num, or NULL means hugepages.
- * size: size of allocated memory (must be power of page size).
- */
 
 /*
  * pop_read/write()
