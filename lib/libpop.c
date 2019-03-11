@@ -140,8 +140,10 @@ int pop_mem_init(pop_mem_t *mem, char *dev)
 			close(mem->fd);
 		return -1;
 	}
+	mem->paddr = virt_to_phys(mem->mem);
 
-	pr_vs("%lu-byte mmaped on %s", mem->size, mem->devname);
+	pr_vs("%lu-byte mmaped on %s, vaddr=%p paddr=0x%lx",
+	      mem->size, mem->devname, mem->mem, mem->paddr);
 
 	return 0;
 }
@@ -210,7 +212,7 @@ pop_buf_t *pop_buf_alloc(pop_mem_t *mem, size_t size)
 	memset(pbuf, 0, sizeof(*pbuf));
 	pbuf->mem	= mem;
 	pbuf->vaddr	= mem->mem + ((mem->alloced_pages << PAGE_SHIFT));
-	pbuf->paddr	= virt_to_phys(pbuf->vaddr);
+	pbuf->paddr	= mem->paddr + ((mem->alloced_pages << PAGE_SHIFT));
 	pbuf->size	= nr_pages << PAGE_SHIFT;
 	pbuf->offset	= 0;
 	pbuf->length	= 0;
@@ -290,6 +292,21 @@ inline void *pop_buf_push(pop_buf_t *pbuf, size_t len)
 inline size_t pop_buf_len(pop_buf_t *pbuf)
 {
 	return pbuf->length - pbuf->offset;
+}
+
+inline uintptr_t pop_virt_to_phys(pop_mem_t *mem, void *vaddr)
+{
+	/*
+	 * pop_virt_to_phys() returns physical addr of vaddr in
+	 * pop memory region without heavy calculation.
+	 */
+
+	if (vaddr < mem->mem || vaddr > (mem->mem + mem->size)) {
+		pr_ve("not a pop memory region!");
+		return 0;
+	}
+
+	return mem->paddr + (vaddr - mem->mem);
 }
 
 /* for debaug use */

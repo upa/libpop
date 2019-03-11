@@ -49,7 +49,9 @@ typedef struct pop_mem {
 	char	devname[POP_PCI_DEVNAME_MAX];	/* '\0' means hugepage	*/
 	struct pop_p2pmem_reg reg;	/* reg for ioctl		*/
 
-	void	*mem;			/* mmaped region		*/
+	void		*mem;		/* mmaped region		*/
+	uintptr_t	paddr;		/* physical addr of mem		*/
+
 	size_t	size;			/* size of allocated region	*/
 	size_t	num_pages;		/* # of pages 		*/
 	size_t	alloced_pages;       	/* # of allocated pages	*/
@@ -92,11 +94,13 @@ void pop_buf_free(pop_buf_t *pbuf);
 void *pop_buf_data(pop_buf_t *pbuf);
 size_t pop_buf_len(pop_buf_t *pbuf);
 uintptr_t pop_buf_paddr(pop_buf_t *pbuf);
+uintptr_t pop_virt_to_phys(pop_mem_t *mem, void *vaddr);
 
 void *pop_buf_put(pop_buf_t *pbuf, size_t len);
 void *pop_buf_trim(pop_buf_t *pbuf, size_t len);
 void *pop_buf_pull(pop_buf_t *pbuf, size_t len);
 void *pop_buf_push(pop_buf_t *pbuf, size_t len);
+
 
 
 /* debug use */
