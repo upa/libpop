@@ -3,15 +3,8 @@
 subdirs = kmod lib tools test
 
 all:
-	for i in $(subdirs); do \
-		echo; echo $$i;	\
-		make -C $$i;	\
-	done
-
+	@(for d in $(subdirs); do $(MAKE) -C $$d; done)
 clean:
-	for i in $(subdirs); do \
-		echo; echo $$i;	\
-		make -C $$i clean;	\
-	done
+	@(for d in $(subdirs); do $(MAKE) -C $$d clean; done)
 
 remake: clean all
