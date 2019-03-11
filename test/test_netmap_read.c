@@ -123,7 +123,7 @@ int main(int argc, char **argv)
 
 				printf("%uth pkt at ring %u, at %p, ptr %lx\n",
 				       received, ri, pkt, slot->ptr);
-				hexdump(pkt, 64);
+				hexdump(pkt, slot->len);
 				head = nm_ring_next(ring, head);
 				ring->head = ring->cur = head;
 			}

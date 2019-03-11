@@ -104,7 +104,7 @@ void print_pop_buf(pop_buf_t *pbuf);
 uintptr_t virt_to_phys(void *addr);
 
 
-/***  netmap-related code ****/
+/***  netmap helper functions ****/
 #include <net/if.h>
 #include <net/netmap.h>
 
