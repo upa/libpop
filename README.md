@@ -18,6 +18,12 @@ confirm i40e depends on the netmap module.
 netmap                196608  1 i40e
 ```
 
+Note that i40e NICs automatically send LLDP packets periodically.  To
+disable this,
+```
+sudo echo lldp stop > /sys/kernel/debug/i40e/0000:17:00.0/command
+```
+
 
 2. compile and install
 
