@@ -72,7 +72,7 @@ pop_mem_t *pop_mem_init(char *dev, size_t size)
 	memset(mem, 0, sizeof(*mem));
 
 	if (dev == NULL) {
-		/* allocate all hugepages  */
+		/* allocate hugepages  */
 		int nr_pages;
 
 		strncpy(mem->devname, "hugepage", POP_PCI_DEVNAME_MAX);
@@ -86,9 +86,11 @@ pop_mem_t *pop_mem_init(char *dev, size_t size)
 		flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_LOCKED | MAP_HUGETLB;
 
 		/* use size if size is not 0, or 2MB * # of pages / 4 */
-		mem->size = (size != 0) ? size : 2097152 * (nr_pages / 4);
-		mem->num_pages = mem->size >> PAGE_SHIFT; /* 4kb align */
 		mem->fd = -1;
+		mem->size = (size != 0) ? size : 2097152 * (nr_pages / 4);
+		mem->num_pages = ((mem->size + (1 << PAGE_SHIFT) - 1)
+				  >> PAGE_SHIFT); /* aligne to PAGE_SIZE(4k) */
+
 	} else {
 		/* pop device. register it through /dev/pop/pop */
 		strncpy(mem->devname, dev, POP_PCI_DEVNAME_MAX);
@@ -113,6 +115,7 @@ pop_mem_t *pop_mem_init(char *dev, size_t size)
 			return NULL;
 		}
 
+		mem->reg.size = size;
 		ret = ioctl(fd, POP_P2PMEM_REG, &mem->reg);
 		if (ret != 0) {
 			pr_ve("failed to register p2pmem on %s", dev);
@@ -210,7 +213,10 @@ pop_buf_t *pop_buf_alloc(pop_mem_t *mem, size_t size)
 	for (nr_pages = 0; (nr_pages << PAGE_SHIFT) < size; nr_pages++);
 
 	if ((mem->num_pages - mem->alloced_pages) < nr_pages) {
-		pr_ve("no page available on %s", mem->devname);
+		pr_ve("no page available on %s, "
+		      "num_pages=%lu alloced_pages=%lu nr_pages=%lu",
+		      mem->devname, mem->num_pages,mem->alloced_pages,
+		      nr_pages);
 		errno = ENOBUFS;
 		return NULL;
 	}

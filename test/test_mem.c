@@ -83,6 +83,10 @@ int main(int argc, char **argv)
 	mem = test_mem_init_will_success(pci, 1024 * 1024);
 	test_mem_exit(mem);
 
+	printf("\n= create 1KB p2pmem on %s: success\n", pci);
+	mem = test_mem_init_will_success(pci, 1024);
+	test_mem_exit(mem);
+
 	printf("\n= create p2pmem on %s twice: success\n", pci);
 	printf("1st\n");
 	mem = test_mem_init_will_success(pci, 0);
@@ -99,6 +103,10 @@ int main(int argc, char **argv)
 
 	printf("\n= create 1MB mem on hugepage: success\n");
 	mem = test_mem_init_will_success(NULL, 1024 * 1024);
+	test_mem_exit(mem);
+
+	printf("\n= create 1KB mem on hugepage: success\n");
+	mem = test_mem_init_will_success(NULL, 1024);
 	test_mem_exit(mem);
 
 	printf("\n= create mem on hugepage twice: success\n");

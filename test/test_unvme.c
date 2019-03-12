@@ -97,7 +97,7 @@ int main(int argc, char **argv)
 	char *buf;
 
 	/* allocate pop mem */
-	mem= pop_mem_init(pci, 0);
+	mem= pop_mem_init(pci, 512 * nblocks);
 	if (mem)
 		perror("pop_mem_init");
 	assert(mem);
@@ -120,25 +120,31 @@ int main(int argc, char **argv)
 
 	printf("alloc pbuf\n");
 	pbuf = pop_buf_alloc(mem, 512 * nblocks);
+	pop_buf_put(pbuf, 512 * nblocks);
 	assert(pbuf);
 	buf = pop_buf_data(pbuf);
 
 	/* execute nvme command */
 	printf("start to execute command\n");
+	printf("slba     %lx\n", slba);
+	printf("nblocks  %u\n", nblocks);
+	printf("buf      %p\n", buf);
+	printf("paddr    0x%lx\n", pop_buf_paddr(pbuf));
+
 	switch (cmd) {
 	case UNVME_READ:
 		ret = unvme_read(unvme, 0, buf, slba, nblocks);
 		printf("unvme_read returns %d\n", ret);
-		
-		buf[512] = '\0';
-		printf("dump 512-byte of buf\n");
-		printf("%s\n", buf);
+		printf("dump 256-byte of buf\n");
+		hexdump(buf, 256);
 		break;
 
 	case UNVME_WRITE:
 		strncpy(buf, data, nblocks * 512);
 		ret = unvme_write(unvme, 0, buf, slba, nblocks);
 		printf("unvme_write returns %d\n", ret);
+		printf("dump 256-byte of buf\n");
+		hexdump(buf, 256);
 		break;
 
 	default:
