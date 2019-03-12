@@ -80,7 +80,6 @@ int pop_mem_init(pop_mem_t *mem, char *dev)
 		}
 
 		flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_LOCKED | MAP_HUGETLB;
-		printf("hugepage num is %d\n", nr_pages);
 		mem->size = 2 * 1024 * 1024 * (nr_pages / 4) ;
 		mem->num_pages = mem->size >> PAGE_SHIFT; /* 4kb align */
 		mem->fd = -1;
