@@ -92,15 +92,15 @@ int main(int argc, char **argv)
 	}
 
 	const unvme_ns_t *unvme;
-	pop_mem_t mem;
+	pop_mem_t *mem;
 	pop_buf_t *pbuf;
 	char *buf;
 
 	/* allocate pop mem */
-	ret = pop_mem_init(&mem, pci);
-	if (ret != 0)
+	mem= pop_mem_init(pci, 0);
+	if (mem)
 		perror("pop_mem_init");
-	assert(ret == 0);
+	assert(mem);
 
 
 	/* open unvme */
@@ -116,10 +116,10 @@ int main(int argc, char **argv)
 	assert(unvme);
 
 	printf("register pop mem to unvme\n");
-	unvme_register_pop_mem(&mem);
+	unvme_register_pop_mem(mem);
 
 	printf("alloc pbuf\n");
-	pbuf = pop_buf_alloc(&mem, 512 * nblocks);
+	pbuf = pop_buf_alloc(mem, 512 * nblocks);
 	assert(pbuf);
 	buf = pop_buf_data(pbuf);
 
@@ -146,6 +146,9 @@ int main(int argc, char **argv)
 		ret = -1;
 		break;
 	}
+
+	unvme_close(unvme);
+	pop_mem_exit(mem);
 
 	return ret;
 }

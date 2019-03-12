@@ -12,29 +12,33 @@ void usage(void) {
 	       "    -b pci    PCI bus slot\n");
 }
 
-void test_mem_init_will_success(pop_mem_t *mem, char *dev)
+pop_mem_t *test_mem_init_will_success(char *dev, int size)
 {
-	int ret;
-	ret = pop_mem_init(mem, dev);
-	if (ret != 0)
+	pop_mem_t *mem;
+
+	mem = pop_mem_init(dev, size);
+	if (!mem)
 		perror("init");
 
-	assert(ret == 0);
+	assert(mem);
+	printf("%lu-byte allocated on %s\n", pop_mem_size(mem),
+	       (dev) ? dev : "hugepage");
 
 	usleep(100000);
+	return mem;
 }
 
-void test_mem_init_will_fail(pop_mem_t *mem, char *dev)
+pop_mem_t *test_mem_init_will_fail(char *dev, int size)
 {
-	int ret;
+	pop_mem_t *mem;
 
-	ret = pop_mem_init(mem, dev);
-	if (ret != 0)
+	mem = pop_mem_init(dev, size);
+	if (!mem)
 		perror("init fail");
 
-	assert(ret < 0);
-
+	assert(mem);
 	usleep(100000);
+	return mem;
 }
 
 void test_mem_exit(pop_mem_t *mem) {
@@ -48,12 +52,9 @@ int main(int argc, char **argv)
 {
 	int ch;
 	char *pci = NULL;
-	pop_mem_t mem, mem2;
+	pop_mem_t *mem, *mem2;
 
 	libpop_verbose_enable();
-
-	memset(&mem, 0, sizeof(mem));
-	memset(&mem2, 0, sizeof(mem2));
 
 	while ((ch = getopt(argc, argv, "b:")) != -1) {
 
@@ -75,29 +76,37 @@ int main(int argc, char **argv)
 	/* p2pmem on NoLoad */
 
 	printf("\n= create p2pmem on %s: success\n", pci);
-	test_mem_init_will_success(&mem, pci);
-	test_mem_exit(&mem);
+	mem = test_mem_init_will_success(pci, 0);
+	test_mem_exit(mem);
+
+	printf("\n= create 1MB p2pmem on %s: success\n", pci);
+	mem = test_mem_init_will_success(pci, 1024 * 1024);
+	test_mem_exit(mem);
 
 	printf("\n= create p2pmem on %s twice: success\n", pci);
 	printf("1st\n");
-	test_mem_init_will_success(&mem, pci);
+	mem = test_mem_init_will_success(pci, 0);
 	printf("2nd\n");
-	test_mem_init_will_success(&mem2, pci);
-	test_mem_exit(&mem);
+	mem2 = test_mem_init_will_success(pci, 0);
+	test_mem_exit(mem);
 
 
 	/* hugepage */
 
 	printf("\n= create mem on hugepage: success\n");
-	test_mem_init_will_success(&mem, NULL);
-	test_mem_exit(&mem);
+	mem = test_mem_init_will_success(NULL, 0);
+	test_mem_exit(mem);
+
+	printf("\n= create 1MB mem on hugepage: success\n");
+	mem = test_mem_init_will_success(NULL, 1024 * 1024);
+	test_mem_exit(mem);
 
 	printf("\n= create mem on hugepage twice: success\n");
 	printf("1st\n");
-	test_mem_init_will_success(&mem, NULL);
+	mem = test_mem_init_will_success(NULL, 0);
 	printf("2nd\n");
-	test_mem_init_will_success(&mem2, NULL);
-	test_mem_exit(&mem);
+	mem2 = test_mem_init_will_success(NULL, 0);
+	test_mem_exit(mem2);
 
 	return 0;
 }

@@ -55,7 +55,7 @@ static int get_nr_hugepages(void)
 
 /* memory operations  */
 
-int pop_mem_init(pop_mem_t *mem, char *dev)
+pop_mem_t *pop_mem_init(char *dev, size_t size)
 {
 	/*
 	 * register dev and its p2pmem through /dev/pop/pop
@@ -63,8 +63,12 @@ int pop_mem_init(pop_mem_t *mem, char *dev)
 
 	int ret, fd ,flags;
 	char popdev[32];
+	pop_mem_t *mem;
 
 	/* validation */
+	mem = malloc(sizeof(*mem));
+	if (!mem)
+		return NULL;
 	memset(mem, 0, sizeof(*mem));
 
 	if (dev == NULL) {
@@ -76,11 +80,13 @@ int pop_mem_init(pop_mem_t *mem, char *dev)
 		nr_pages  = get_nr_hugepages();
 		if (nr_pages < 0) {
 			pr_ve("failed to get num of hugepages");
-			return -1;
+			return NULL;
 		}
 
 		flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_LOCKED | MAP_HUGETLB;
-		mem->size = 2 * 1024 * 1024 * (nr_pages / 4) ;
+
+		/* use size if size is not 0, or 2MB * # of pages / 4 */
+		mem->size = (size != 0) ? size : 2097152 * (nr_pages / 4);
 		mem->num_pages = mem->size >> PAGE_SHIFT; /* 4kb align */
 		mem->fd = -1;
 	} else {
@@ -98,20 +104,20 @@ int pop_mem_init(pop_mem_t *mem, char *dev)
 		if (ret < 3) {
 			pr_ve("invalid pci slot %s", dev);
 			errno = EINVAL;
-			return -1;
+			return NULL;
 		}
 
 		fd = open(DEVPOP, O_RDWR);
 		if (fd < 0) {
 			pr_ve("failed to open %s", DEVPOP);
-			return -1;
+			return NULL;
 		}
 
 		ret = ioctl(fd, POP_P2PMEM_REG, &mem->reg);
 		if (ret != 0) {
 			pr_ve("failed to register p2pmem on %s", dev);
 			close(fd);
-			return -1;
+			return NULL;
 		}
 		close(fd);
 
@@ -122,7 +128,7 @@ int pop_mem_init(pop_mem_t *mem, char *dev)
 		mem->fd = open(popdev, O_RDWR);
 		if (mem->fd < 0) {
 			pr_ve("failed to open %s", popdev);
-			return -1;
+			return NULL;
 		}
 
 		flags = MAP_LOCKED | MAP_SHARED;
@@ -137,14 +143,14 @@ int pop_mem_init(pop_mem_t *mem, char *dev)
 		pr_ve("failed to mmap on %s", mem->devname);
 		if (mem->fd != -1)
 			close(mem->fd);
-		return -1;
+		return NULL;
 	}
 	mem->paddr = virt_to_phys(mem->mem);
 
 	pr_vs("%lu-byte mmaped on %s, vaddr=%p paddr=0x%lx",
 	      mem->size, mem->devname, mem->mem, mem->paddr);
 
-	return 0;
+	return mem;
 }
 
 
@@ -181,7 +187,14 @@ int pop_mem_exit(pop_mem_t *mem)
 		return close(mem->fd);
 	}
 
+	free(mem);
+
 	return 0;
+}
+
+size_t pop_mem_size(pop_mem_t *mem)
+{
+	return mem->size;
 }
 
 

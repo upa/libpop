@@ -53,8 +53,8 @@ typedef struct pop_mem {
 	uintptr_t	paddr;		/* physical addr of mem		*/
 
 	size_t	size;			/* size of allocated region	*/
-	size_t	num_pages;		/* # of pages 		*/
-	size_t	alloced_pages;       	/* # of allocated pages	*/
+	size_t	num_pages;		/* # of pages this mem has	*/
+	size_t	alloced_pages;       	/* # of allocated pages	from this */
 } pop_mem_t;
 
 
@@ -62,17 +62,16 @@ typedef struct pop_mem {
  * pop_mem_init()
  *
  * Register p2pmem pci device or hugepage into libpop memory
- * context. On success, zero is returned. On error, -1 is returned,
- * and errno is set appropriately.
+ * context. On success, pop_mem_t* is returned. On error, NULL is
+ * returned, and errno is set appropriately.
  *
- * mem:  libpop memory context.
  * dev:  string for PCI slot num, or NULL means hugepages.
- * size: size of allocated memory (must be power of page size).
+ * size: size of allocated memory in byte, 0 means all
  */
-int pop_mem_init(pop_mem_t *mem, char *dev);
+pop_mem_t *pop_mem_init(char *dev, size_t size);
 int pop_mem_exit(pop_mem_t *mem);
 
-
+size_t pop_mem_size(pop_mem_t *mem);
 
 
 /* structure describing pop buffer on p2pmem */
@@ -81,7 +80,7 @@ typedef struct pop_buf {
 
 	void		*vaddr;	/* virtual address on mmap region	*/
 	uintptr_t	paddr;	/* physical addres of the vaddr		*/
-	size_t		size;	/* size of allocated mmap region	*/
+	size_t		size;	/* allocated size for this pop_buf	*/
 
 	size_t		offset;	/* offset of data	*/
 	size_t		length;	/* length of data	*/

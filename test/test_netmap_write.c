@@ -92,12 +92,12 @@ void usage(void) {
 
 int main(int argc, char **argv)
 {
-	int ch, ret, n, len = 64, qid = 0;
+	int ch, n, len = 64, qid = 0;
 	char *pci = NULL;
 	char *port = NULL;
 
 #define NUM_BUFS	4
-	pop_mem_t mem;
+	pop_mem_t *mem;
 	pop_buf_t *pbuf[NUM_BUFS];
 
 	/* enable verbose log */
@@ -125,11 +125,11 @@ int main(int argc, char **argv)
 	}
 
 	/* allocate p2pmem */
-	ret = pop_mem_init(&mem, pci);
-	if (ret != 0) {
+
+	mem= pop_mem_init(pci, 0);
+	if (!mem)
 		perror("pop_mem_init");
-	}
-	assert(ret == 0);
+	assert(mem);
 
 	/* open netmap port */
 	struct nm_desc base_nmd, *d;
@@ -147,7 +147,7 @@ int main(int argc, char **argv)
 
 	/* build packet */
 	for (n = 0; n < NUM_BUFS; n++) {
-		pbuf[n] = pop_buf_alloc(&mem, 2048);
+		pbuf[n] = pop_buf_alloc(mem, 2048);
 		pop_buf_put(pbuf[n], len);
 		build_pkt(pop_buf_data(pbuf[n]), len, n);
 		hexdump(pop_buf_data(pbuf[n]), 128);
@@ -171,7 +171,7 @@ int main(int argc, char **argv)
                 usleep(1);
         }
 
-	pop_mem_exit(&mem);
+	pop_mem_exit(mem);
 
 	return 0;
 }

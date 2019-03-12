@@ -44,11 +44,11 @@ void usage(void) {
 
 int main(int argc, char **argv)
 {
-	int ch, ret;
+	int ch;
 	char *pci = NULL;
 	char *port = NULL;
 	int cnt = -1, received = 0;
-	pop_mem_t mem;
+	pop_mem_t *mem;
 
 	/* enable verbose log */
 	libpop_verbose_enable();
@@ -73,11 +73,10 @@ int main(int argc, char **argv)
 
 
 	/* allocate p2pmem */
-	ret = pop_mem_init(&mem, pci);
-	if (ret != 0) {
+	mem = pop_mem_init(pci, 0);
+	if (!mem)
 		perror("pop_mem_init");
-	}
-	assert(ret == 0);
+	assert(mem);
 
 	/* open netmap port */
 	struct nm_desc base_nmd, *d;
@@ -97,7 +96,7 @@ int main(int argc, char **argv)
 	for (ri = d->first_rx_ring; ri <= d->last_rx_ring; ri++) {
 		struct netmap_ring *ring = NETMAP_RXRING(d->nifp, ri);
 
-		prxrings[ri] = pop_nm_rxring_init(d->fd, ring, &mem);
+		prxrings[ri] = pop_nm_rxring_init(d->fd, ring, mem);
 		if (!prxrings[ri]) {
 			perror("pop_nm_rxring_init: failed");
 			return -1;
@@ -138,7 +137,7 @@ int main(int argc, char **argv)
 		pop_nm_rxring_exit(prxrings[ri]);
 
 	nm_close(d);
-	pop_mem_exit(&mem);
+	pop_mem_exit(mem);
 
 	return 0;
 }

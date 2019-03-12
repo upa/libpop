@@ -198,7 +198,7 @@ static const struct file_operations pop_dev_fops = {
 	.release	= pop_dev_release,
 };
 
-static int pop_register_p2pmem(struct pci_dev *pdev)
+static int pop_register_p2pmem(struct pci_dev *pdev, size_t size)
 {
 	/* allocate 'all' p2pmem from pdev, register miscdevice
 	 * for the p2pmem, and register pop_dev to pop.dev_list.
@@ -207,7 +207,6 @@ static int pop_register_p2pmem(struct pci_dev *pdev)
 
 	int ret;
 	void *p2pmem;
-	size_t size = 0;
 	struct pop_dev *ppdev;
 
 	if ((ppdev = pop_find_dev(pdev))) {
@@ -215,8 +214,10 @@ static int pop_register_p2pmem(struct pci_dev *pdev)
 		return ppdev->size;
 	}
 
-	if (pdev->p2pdma->pool)
-		size = gen_pool_size(pdev->p2pdma->pool);
+	/* if reg.size is 0, allocate all the p2pmem */
+	if (size == 0)
+		if (pdev->p2pdma->pool)
+			size = gen_pool_size(pdev->p2pdma->pool);
 
 	p2pmem = pci_alloc_p2pmem(pdev, size);
 	if (!p2pmem) {
@@ -309,7 +310,7 @@ static long pop_ioctl(struct file *filp, unsigned int cmd, unsigned long data)
 			goto dev_put_out;
 		}
 
-		size = pop_register_p2pmem(pdev);
+		size = pop_register_p2pmem(pdev, reg.size);
 		if (size < 0)
 			goto dev_put_out;
 
