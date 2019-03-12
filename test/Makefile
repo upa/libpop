@@ -6,7 +6,8 @@ CFLAGS	:= -g -Wall $(INCLUDE)
 
 PROGNAME = test_mem test_pbuf \
 	   test_netmap_write test_netmap_read	\
-	   test_unvme
+	   test_unvme	\
+	   test_unvme_to_netmap
 
 all: $(PROGNAME)
 
