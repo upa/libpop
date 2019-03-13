@@ -70,6 +70,7 @@ pop_mem_t *pop_mem_init(char *dev, size_t size)
 	if (!mem)
 		return NULL;
 	memset(mem, 0, sizeof(*mem));
+	pthread_mutex_init(&mem->mutex, NULL);
 
 	if (dev == NULL) {
 		/* allocate hugepages  */
@@ -205,10 +206,10 @@ size_t pop_mem_size(pop_mem_t *mem)
 
 pop_buf_t *pop_buf_alloc(pop_mem_t *mem, size_t size)
 {
-	pop_buf_t *pbuf;
+	pop_buf_t *pbuf = NULL;
 	size_t nr_pages;
 
-	/* XXX: should lock! */
+	pthread_mutex_lock(&mem->mutex);
 
 	for (nr_pages = 0; (nr_pages << PAGE_SHIFT) < size; nr_pages++);
 
@@ -218,13 +219,13 @@ pop_buf_t *pop_buf_alloc(pop_mem_t *mem, size_t size)
 		      mem->devname, mem->num_pages,mem->alloced_pages,
 		      nr_pages);
 		errno = ENOBUFS;
-		return NULL;
+		goto out;
 	}
 
 	pbuf = malloc(sizeof(*pbuf));
 	if (!pbuf) {
 		pr_ve("failed to allocate pop_buf structure");
-		return NULL;
+		goto out;
 	}
 
 	memset(pbuf, 0, sizeof(*pbuf));
@@ -236,7 +237,8 @@ pop_buf_t *pop_buf_alloc(pop_mem_t *mem, size_t size)
 	pbuf->length	= 0;
 
 	mem->alloced_pages += nr_pages;
-
+out:
+	pthread_mutex_unlock(&mem->mutex);
 	return pbuf;
 }
 

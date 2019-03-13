@@ -8,6 +8,7 @@
 #ifndef __KERNEL__
 #include <stdio.h>
 #include <stdint.h>	/* uintptr_t */
+#include <pthread.h>	/* pthread_mutex */
 #endif /* __KERNEL__ */
 
 
@@ -55,6 +56,8 @@ typedef struct pop_mem {
 	size_t	size;			/* size of allocated region	*/
 	size_t	num_pages;		/* # of pages this mem has	*/
 	size_t	alloced_pages;       	/* # of allocated pages	from this */
+
+	pthread_mutex_t	mutex;		/* mutex for alloc/free pop buf	*/
 } pop_mem_t;
 
 
