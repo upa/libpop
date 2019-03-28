@@ -23,6 +23,10 @@ disable this,
 ```
 sudo echo lldp stop > /sys/kernel/debug/i40e/0000:17:00.0/command
 ```
+or
+```
+ethtool --set-priv-flags <interface> disable-fw-lldp on
+```
 
 
 2. compile and install

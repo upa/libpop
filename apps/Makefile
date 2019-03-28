@@ -4,7 +4,7 @@ LDFLAGS := -L../lib -L../unvme/src
 LDLIBS  := -pthread -lunvme -lpop
 CFLAGS  := -g -Wall $(INCLUDE)
 
-PROGNAME = bench-nvme
+PROGNAME = bench-nvme generator
 
 all: $(PROGNAME)
 
