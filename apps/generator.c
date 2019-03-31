@@ -94,14 +94,14 @@ void print_gen_info(void)
 void usage(void)
 {
 	printf("usage: generator\n"
-	       "    -p pci          p2pmem slot, none means hugepage\n"
-	       "    -u pci          nvme slot under unvme\n"
-	       "    -i port         network interface name\n"
-	       "    -n ncpus        number of cpus\n"
-	       "    -b batch        batch size\n"
-	       "    -w walk mode    seq or random\n"
-	       "    -s start lba    start logical block address\n"
-	       "    -e end lba      end logical block address\n"
+	       "    -p pci               p2pmem slot, none means hugepage\n"
+	       "    -u pci               nvme slot under unvme\n"
+	       "    -i port              network interface name\n"
+	       "    -n ncpus             number of cpus\n"
+	       "    -b batch             batch size\n"
+	       "    -w walk mode         seq or random\n"
+	       "    -s start lba (hex)   start logical block address\n"
+	       "    -e end lba (hex)     end logical block address\n"
 		);
 }
 
@@ -174,8 +174,7 @@ void *thread_body(void *arg)
 			lba = next_lba(lba, gen.lba_end);
 
 			pop_nm_set_buf(&ring->slot[head], buf[b]);
-			//ring->slot[head].len = get_pktlen_from_desc(pkt, 2048);
-			ring->slot[head].len = 512;
+			ring->slot[head].len = get_pktlen_from_desc(pkt, 2048);
 			head = nm_ring_next(ring, head);
 
 			th->npkts++;
@@ -226,7 +225,8 @@ int main(int argc, char **argv)
 	gen.batch = 1;
 	gen.walk = WALK_MODE_SEQ;
 	gen.lba_start = 0;
-	gen.lba_end = 0xe8e088b0;	/* XXX: Intel P4600 hard code */
+	//gen.lba_end = 0xe8e088b0;	/* XXX: Intel P4600 hard code */
+	gen.lba_end = 0x40000;	/* 4 blocks (1slot) x 2048 slots x 32 rings */
 
 
 	while ((ch = getopt(argc, argv, "p:u:i:n:b:w:s:e:")) != -1) {
@@ -265,10 +265,16 @@ int main(int argc, char **argv)
 			}
 			break;
 		case 's':
-			gen.lba_start = atol(optarg);
+			if (sscanf(optarg, "0x%lx", &gen.lba_start) < 1) {
+				printf("invalid start lba %s\n", optarg);
+				return -1;
+			}
 			break;
 		case 'e':
-			gen.lba_end = atol(optarg);
+			if (sscanf(optarg, "0x%lx", &gen.lba_end) < 1) {
+				printf("invalid end lba %s\n", optarg);
+				return -1;
+			}
 			break;
 		default:
 			usage();

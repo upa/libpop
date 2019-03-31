@@ -15,7 +15,7 @@ struct pkt_desc {
 	((struct pkt_desc *)(buf + (len - (sizeof(struct pkt_desc)))))
 
 #define get_pktlen_from_desc(buf, len)		\
-	(get_pkt_desc(buf, len))->length;
+	(get_pkt_desc(buf, len))->length
 
 
 #endif /* _PKT_DESC_H_ */
