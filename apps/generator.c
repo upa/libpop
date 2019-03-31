@@ -45,7 +45,7 @@ int count_online_cpus(void)
 }
 
 #define printv1(fmt, ...) if (gen.verbose >= 1) \
-		fprintf(stdout, "%s: " fmt, __func__, ##__VA_ARGS__)
+		fprintf(stdout, fmt, ##__VA_ARGS__)
 #define printv2(fmt, ...) if (gen.verbose >= 2) \
 		fprintf(stdout, "%s: " fmt, __func__, ##__VA_ARGS__)
 
@@ -66,6 +66,7 @@ struct generator {
 	pop_mem_t	*mem;	/* pop memory */
 	
 	/* misc */
+	pthread_t	tid_cnt;	/* tid for count thread */
 	int	verbose;	/* verbose level */
 
 } gen;
@@ -218,6 +219,63 @@ void *thread_body(void *arg)
 	return NULL;
 }
 
+void *count_thread(void *arg)
+{
+	int n, cpu;
+	cpu_set_t target_cpu_set;
+	unsigned long pps, npkts_before[MAX_CPUS], npkts_after[MAX_CPUS];
+	unsigned long bps, nbytes_before[MAX_CPUS], nbytes_after[MAX_CPUS];
+	
+	memset(npkts_before, 0, sizeof(unsigned long) * MAX_CPUS);
+	memset(npkts_after, 0, sizeof(unsigned long) * MAX_CPUS);
+	memset(nbytes_before, 0, sizeof(unsigned long) * MAX_CPUS);
+	memset(nbytes_after, 0, sizeof(unsigned long) * MAX_CPUS);
+
+	/* pin this thread on the last cpu */
+	cpu = count_online_cpus() - 1;
+	CPU_ZERO(&target_cpu_set);
+	CPU_SET(cpu, &target_cpu_set);
+	pthread_setaffinity_np(gen.tid_cnt, sizeof(target_cpu_set),
+			       &target_cpu_set);
+	printf("count thread on cpu %d\n", cpu);
+
+	while (1) {
+		if (caught_signal)
+			break;
+
+		/* gather counters */
+		for (n = 0; n < gen.ncpus; n++) {
+			npkts_before[n] = gen_th[n].npkts;
+			nbytes_before[n] = gen_th[n].nbytes;
+		}
+
+		sleep(1);
+
+		for (n = 0; n < gen.ncpus; n++) {
+			npkts_after[n] = gen_th[n].npkts;
+			nbytes_after[n] = gen_th[n].nbytes;
+		}
+
+		/* totaling the counters */
+		for (pps = 0, bps = 0, n = 0; n < gen.ncpus; n++) {
+			pps += npkts_after[n] - npkts_before[n];
+			bps += nbytes_after[n] - nbytes_before[n];
+		}
+
+		printf("SUM-PPS: %lu pps\n", pps);
+		for (n = 0; n < gen.ncpus; n++)
+			printv1("    CPU-PPS %02d: %lu pps\n", n,
+				npkts_after[n] - npkts_before[n]);
+
+		printf("SUM-BPS: %lu bps\n", bps);
+		for (n = 0; n < gen.ncpus; n++)
+			printv1("    CPU-BPS %02d: %lu bps\n", n,
+				nbytes_after[n] - nbytes_before[n]);
+	}
+
+	pthread_exit(NULL);
+}
+
 int main(int argc, char **argv)
 {
 	int ret, ch, n, i, max_cpu;
@@ -319,6 +377,12 @@ int main(int argc, char **argv)
 	gen.unvme = unvme_open(gen.nvme);
 	unvme_register_pop_mem(gen.mem);
 
+	/* set signal */
+	if (signal(SIGINT, sig_handler) == SIG_ERR) {
+		perror("signal");
+		sig_handler(SIGINT);
+	}
+
 	/* initialize threads */
 	for (n = 0; n < gen.ncpus; n++) {
 		char errmsg[64];
@@ -358,11 +422,8 @@ int main(int argc, char **argv)
 	}
 
 
-	/* set signal */
-	if (signal(SIGINT, sig_handler) == SIG_ERR) {
-		perror("signal");
-		sig_handler(SIGINT);
-	}
+	/* spawn the couting thread */
+	pthread_create(&gen.tid_cnt, NULL, count_thread, NULL);
 
 close:
 	for (i = 0; i < n; i++) {
@@ -372,6 +433,8 @@ close:
 
 	unvme_close(gen.unvme);
 	pop_mem_exit(gen.mem);
+
+	pthread_join(gen.tid_cnt, NULL);
 
 	return ret;
 
