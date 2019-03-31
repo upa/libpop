@@ -44,6 +44,10 @@ int count_online_cpus(void)
 	return -1;
 }
 
+#define printv1(fmt, ...) if (gen.verbose >= 1) \
+		fprintf(stdout, "%s: " fmt, __func__, ##__VA_ARGS__)
+#define printv2(fmt, ...) if (gen.verbose >= 2) \
+		fprintf(stdout, "%s: " fmt, __func__, ##__VA_ARGS__)
 
 /* structure describing this program */
 struct generator {
@@ -61,6 +65,9 @@ struct generator {
 	const unvme_ns_t	*unvme;	/* unvme */
 	pop_mem_t	*mem;	/* pop memory */
 	
+	/* misc */
+	int	verbose;	/* verbose level */
+
 } gen;
 
 /* structure describing a thread */
@@ -102,6 +109,7 @@ void usage(void)
 	       "    -w walk mode         seq or random\n"
 	       "    -s start lba (hex)   start logical block address\n"
 	       "    -e end lba (hex)     end logical block address\n"
+	       "    -v                   verbose mode\n"
 		);
 }
 
@@ -180,7 +188,7 @@ void *thread_body(void *arg)
 			th->npkts++;
 			th->nbytes += get_pktlen_from_desc(pkt, 2048);
 
-			printf("LBA=0x%lx head=%lu pkt=%p\n", lba, head, pkt);
+			printv2("LBA=0x%lx head=%lu pkt=%p\n", lba, head, pkt);
 		}
 
 		for (b = 0; b < batch; b++) {
@@ -196,7 +204,7 @@ void *thread_body(void *arg)
 		 * cur and call ioctl() to xmit packets */
 		ring->head = ring->cur = head;
 		ioctl(th->nmd->fd, NIOCTXSYNC, NULL);
-		printf("TXSYNC\n");
+		printv2("TXSYNC\n");
 	}
 
 	gettimeofday(&th->end, NULL);
@@ -227,9 +235,9 @@ int main(int argc, char **argv)
 	gen.lba_start = 0;
 	//gen.lba_end = 0xe8e088b0;	/* XXX: Intel P4600 hard code */
 	gen.lba_end = 0x40000;	/* 4 blocks (1slot) x 2048 slots x 32 rings */
+	gen.verbose = 0;
 
-
-	while ((ch = getopt(argc, argv, "p:u:i:n:b:w:s:e:")) != -1) {
+	while ((ch = getopt(argc, argv, "p:u:i:n:b:w:s:e:v")) != -1) {
 		switch (ch) {
 		case 'p':
 			gen.pci = optarg;
@@ -275,6 +283,9 @@ int main(int argc, char **argv)
 				printf("invalid end lba %s\n", optarg);
 				return -1;
 			}
+			break;
+		case 'v':
+			gen.verbose++;
 			break;
 		default:
 			usage();
