@@ -7,7 +7,7 @@ Requirements
 - i40e NIC
 - NVMe device
 - something good motherboad
-
+- something good p2pmem card
 
 
 1. install netmap from https://github.com/upa/netmap
@@ -41,6 +41,7 @@ cd unvme
 make install && sudo make install
 
 # make boogiepop
+cd ..
 make
 
 # install boogiepop kernel module
@@ -50,8 +51,6 @@ sudo insmod kmod/boogiepop.ko
 
 3. set hugepages
 ```
-#!/bin/bash
-
 echo 2048 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
 echo 0 > /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
 mkdir -p /mnt/hugepages
