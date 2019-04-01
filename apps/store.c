@@ -68,6 +68,7 @@ void usage(void)
 	printf("usage: store\n"
 	       "    -u pci               nvme slot under unvme\n"
 	       "    -l len               packet length\n"
+	       "    -b batch             # of batched packet in a write\n"
 	       "    -s sltart lba (hex)  start logical block address\n"
 	       "    -e end lba (hex)     end logical block address\n"
 		);
@@ -75,15 +76,16 @@ void usage(void)
 
 int main(int argc, char **argv)
 {
-	int ch, ret, num;
+	int ch, ret;
 	int pktlen = 64;
+	int batch = 512;
 	char *nvme = NULL;
 	unsigned long lba_start = 0, lba_end = 0, lba;
 	const unvme_ns_t *unvme = NULL;
 	pop_mem_t *mem;
 	pop_buf_t *pbuf;
 
-	while ((ch = getopt(argc, argv, "u:l:s:e:")) != -1) {
+	while ((ch = getopt(argc, argv, "u:l:b:s:e:")) != -1) {
 		switch (ch) {
 		case 'u':
 			nvme = optarg;
@@ -92,6 +94,13 @@ int main(int argc, char **argv)
 			pktlen = atoi(optarg);
 			if (pktlen < 64 || pktlen > 1500) {
 				printf("invalid pkt len %s\n", optarg);
+				return -1;
+			}
+			break;
+		case 'b':
+			batch = atoi(optarg);
+			if (batch < 0) {
+				printf("invalid batch size %s\n", optarg);
 				return -1;
 			}
 			break;
@@ -123,23 +132,40 @@ int main(int argc, char **argv)
 	mem = pop_mem_init(NULL, 0);
 	unvme_register_pop_mem(mem);
 
-	pbuf = pop_buf_alloc(mem, 2048);
-	pop_buf_put(pbuf, 2048);
+	int b;
+	int buflen = 2048 * batch;
+	int nblocks = buflen / 512;
+	unsigned long npkts = ((lba_end - lba_start) / 4);
+	unsigned long num = 0;
 
-	printf("write packets from 0x%lx to 0x%lx\n", lba_start, lba_end);
+	pbuf = pop_buf_alloc(mem, batch * 4 * 512);
+	pop_buf_put(pbuf, batch * 4 * 512);
 
-	for (num = 0, lba = lba_start; lba < lba_end; num++, lba += 4) {
-		void *pkt = pop_buf_data(pbuf);
-		build_pkt(pkt, pktlen, lba);
-		ret = unvme_write(unvme, 0, pkt, lba, 4);
+	printf("write packets from 0x%lx to 0x%lx, batch %d (%d blocks)\n",
+	       lba_start, lba_end, batch, nblocks);
+
+	for (lba = lba_start; lba < lba_end; lba += nblocks) {
+
+		printf("\r");
+
+		for (b = 0; b < batch; b++) {
+			void *pkt = pop_buf_data(pbuf) + 2048 * b;
+			build_pkt(pkt, pktlen, lba + b);
+			num++;
+		}
+
+		ret = unvme_write(unvme, 0, pop_buf_data(pbuf), lba, nblocks);
 		if (ret != 0) {
 			printf("unvme_write failed on lba 0x%lx\n", lba);
 			perror("unvme_write");
 			return -1;
 		}
-	}
 
-	printf("%d-length %d packets written\n", pktlen, num);
+		printf("write %ld/%ld packets", num, npkts);
+	}
+	printf("\n");
+
+	printf("%d-length %ld packets written\n", pktlen, num);
 
 	return 0;
 }
