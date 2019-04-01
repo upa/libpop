@@ -24,6 +24,8 @@
 #define WALK_MODE_SEQ  		0
 #define WALK_MODE_RANDOM	1
 
+#define NM_BATCH_TO_NBLOCKS(b)	((b) << 11 >> 9)
+
 static const char *walk_mode_string[] = {
 	"seq", "random"
 };
@@ -47,6 +49,8 @@ int count_online_cpus(void)
 #define printv1(fmt, ...) if (gen.verbose >= 1) \
 		fprintf(stdout, fmt, ##__VA_ARGS__)
 #define printv2(fmt, ...) if (gen.verbose >= 2) \
+		fprintf(stdout, "%s: " fmt, __func__, ##__VA_ARGS__)
+#define printv3(fmt, ...) if (gen.verbose >= 3) \
 		fprintf(stdout, "%s: " fmt, __func__, ##__VA_ARGS__)
 
 /* structure describing this program */
@@ -80,8 +84,13 @@ struct gen_thread {
 
 	struct nm_desc	*nmd;	/* nm_desc no this thread */
 
+	unsigned long	lba_start, lba_end;	/* lba range for this thread*/
+
 	unsigned long	npkts;	/* number of packets TXed */
 	unsigned long	nbytes;	/* number of bytes TXed */
+	unsigned long	nbytes_nvme;	/* number of bytes nvme read */
+	unsigned long	no_slot;	/* number of no netmap slot cases */
+
 	struct timeval	start, end;	/* start and end time */
 } gen_th[MAX_CPUS];
 
@@ -98,6 +107,10 @@ void print_gen_info(void)
 	printf("start lba (-s): 0x%lx\n", gen.lba_start);
 	printf("end lba (-e):   0x%lx\n", gen.lba_end);
 	printf("interval (-I):  %d\n", gen.interval);
+	printf("\n");
+	printf("nblocks in a nvme cmd: %d (%d-byte)\n",
+	       NM_BATCH_TO_NBLOCKS(gen.batch),
+	       NM_BATCH_TO_NBLOCKS(gen.batch) * 512);
 	printf("=====================================\n");
 }
 
@@ -108,7 +121,7 @@ void usage(void)
 	       "    -u pci               nvme slot under unvme\n"
 	       "    -i port              network interface name\n"
 	       "    -n ncpus             number of cpus\n"
-	       "    -b batch             batch size\n"
+	       "    -b batch             batch size in a netmap iteration\n"
 	       "    -w walk mode         seq or random\n"
 	       "    -s start lba (hex)   start logical block address\n"
 	       "    -e end lba (hex)     end logical block address\n"
@@ -117,20 +130,23 @@ void usage(void)
 		);
 }
 
-unsigned long next_lba(unsigned long lba, unsigned long lba_end)
+unsigned long next_lba(unsigned long lba,
+		       unsigned long lba_start, unsigned long lba_end,
+		       unsigned long nblocks)
 {
 	switch (gen.walk) {
 	case WALK_MODE_SEQ:
 		/* XXX: netmap_slot is 2048 byte, compised of
 		 * 4 blocks on nvme. */
-		if ((lba + 4) < lba_end)
-			return lba + 4;
+		if ((lba + nblocks) < lba_end)
+			return lba + nblocks;
 		else
-			return gen.lba_start;
+			return lba_start;
 		break;
 	case WALK_MODE_RANDOM:
 		/* align in 4 blocks */
-		return (rand() % (lba_end >> 2)) << 2;
+		return ((rand() % (lba_end - lba_start - nblocks)) + lba_start)
+			<< 2;
 		break;
 	}
 
@@ -143,71 +159,107 @@ void *thread_body(void *arg)
 {
 	int n, ret;
 	struct gen_thread *th = arg;
+	int qid = th->cpu;
 	cpu_set_t target_cpu_set;
-	pop_buf_t *buf[MAX_BATCH_SIZE];
-	unvme_iod_t iod[MAX_BATCH_SIZE];
-	unsigned long lba, batch, b, head;
+	pop_buf_t *buf;
+	void *pkts[MAX_BATCH_SIZE];
+	unvme_iod_t iod;
+	unsigned long lba, batch, nblocks, b, head, nbytes, npkts;
 	struct netmap_ring *ring = NETMAP_TXRING(th->nmd->nifp, th->cpu);
-
-
 
 	/* pin this thread on the cpu */
 	CPU_ZERO(&target_cpu_set);
 	CPU_SET(th->cpu, &target_cpu_set);
 	pthread_setaffinity_np(th->tid, sizeof(cpu_set_t), &target_cpu_set);
 
-	/* allocate num of batch pop bufs */
-	for (n = 0; n < gen.batch; n++) {
-		buf[n] = pop_buf_alloc(gen.mem, 2048);
-		pop_buf_put(buf[n], 2048);
-	}
+	/* allocate packet buffer. we use a single pop_buf for
+	 * multiple packet buffers. It enalbes us to get all batched
+	 * packets from nvme in a single read command */
+	buf = pop_buf_alloc(gen.mem, 2048 * gen.batch);
+	pop_buf_put(buf, 2048 * gen.batch);
+	for (n = 0; n < gen.batch; n++)
+		pkts[n] = pop_buf_data(buf) + 2048 * n;
 
-	/* initialize the start LBA in accordance with walk mode */
-	lba = gen.lba_start + (gen.walk == WALK_MODE_RANDOM ? th->cpu * 4 : 0);
+	/* initialize the start LBA */
+	lba = th->lba_start;
 
-	printf("thread on cpu %d, nmport %s, start\n", th->cpu, th->nmport);
+	printf("THREAD: qid %d, port %s, lba 0x%lx-0x%lx, pbuf 0x%lx start\n",
+	       qid, th->nmport, th->lba_start, th->lba_end,
+	       pop_buf_paddr(buf));
 	gettimeofday(&th->start, NULL);
 
 	while (!caught_signal) {
 
+		npkts = 0;
+		nbytes = 0;
+		nblocks = 0;
+
 		batch = nm_ring_space(ring) > gen.batch ? gen.batch :
 			nm_ring_space(ring);
-
+		if (batch == 0) {
+			th->no_slot++;
+			goto sync_out;
+		}
 		head = ring->head;
 
+		/* execute a single read command for all packets 
+		 * in this batch. */
+		nblocks = NM_BATCH_TO_NBLOCKS(batch);
+		iod = unvme_aread(gen.unvme, qid, pop_buf_data(buf),
+				  lba, nblocks);
+		lba = next_lba(lba, th->lba_start, th->lba_end, nblocks);
+
+		/* fill the netmap_slot with the packet info in
+		 * this pop buf region */
 		for (b = 0; b < batch; b++) {
-			void *pkt = pop_buf_data(buf[b]);
+			void *pkt = pkts[b];
+#define NM 1
+#if NM
+			struct netmap_slot *slot = &ring->slot[head];
+			slot->flags |= NS_PHY_INDIRECT;
+			slot->ptr = pop_virt_to_phys(gen.mem, pkt);
+			slot->len = get_pktlen_from_desc(pkt, 2048);
 
-			/* execute an nvme read cmd to a pop buf, and
-			 * set the buf for a netmap tx slot. this can
-			 * be done asynchronously. */
-			iod[b] = unvme_aread(gen.unvme, th->cpu, pkt, lba, 4);
-			lba = next_lba(lba, gen.lba_end);
-
-			pop_nm_set_buf(&ring->slot[head], buf[b]);
-			ring->slot[head].len = get_pktlen_from_desc(pkt, 2048);
 			head = nm_ring_next(ring, head);
+#endif
 
-			th->npkts++;
-			th->nbytes += get_pktlen_from_desc(pkt, 2048);
+			npkts++;
+			nbytes += get_pktlen_from_desc(pkt, 2048);
 
-			printv2("LBA=0x%lx head=%lu pkt=%p\n", lba, head, pkt);
+			printv2("CPU=%d LBA=0x%lx head=%lu pkt=%p\n",
+				th->cpu, lba, head, pkt);
+
 		}
 
-		for (b = 0; b < batch; b++) {
-			ret = unvme_apoll(iod[b], UNVME_TIMEOUT);
-			if (ret != 0) {
-				printf("unvme_apoll timeout on cpu %d\n",
-				       th->cpu);
-			}
+		ret = unvme_apoll(iod, UNVME_TIMEOUT);
+		if (ret != 0) {
+			printf("unvme_apoll timeout on cpu %d\n", th->cpu);
+			continue;
 		}
 
-		/* ok, all nvme read commands finished, and all netmap
+#if NM
+		/* ok, an nvme read command finished, and all netmap
 		 * slots for this iteration are filled. Advance the
 		 * cur and call ioctl() to xmit packets */
 		ring->head = ring->cur = head;
-		ioctl(th->nmd->fd, NIOCTXSYNC, NULL);
-		printv2("TXSYNC\n");
+		if (batch < gen.batch) {
+			/* tell netmap that we need more slots */
+			ring->cur = ring->tail;
+		}
+
+#endif
+	sync_out:
+		if (ioctl(th->nmd->fd, NIOCTXSYNC, NULL) < 0) {
+			printf("TXSYNC error on cpu %d\n", th->cpu);
+			perror("ioctl(TXSYNC)");
+			break;
+		}
+		printv2("TXSYNC on cpu %d\n", th->cpu);
+
+		th->npkts += npkts;
+		th->nbytes += nbytes;
+		th->nbytes_nvme += nblocks * 512;
+
 		if (gen.interval)
 			usleep(gen.interval);
 	}
@@ -215,10 +267,12 @@ void *thread_body(void *arg)
 	gettimeofday(&th->end, NULL);
 
 	/* xmit pending packets */
+	/*
 	while (nm_tx_pending(ring)) {
 		ioctl(th->nmd->fd, NIOCTXSYNC, NULL);
 		usleep(1);
 	}
+	*/
 
 	return NULL;
 }
@@ -229,11 +283,8 @@ void *count_thread(void *arg)
 	cpu_set_t target_cpu_set;
 	unsigned long pps, npkts_before[MAX_CPUS], npkts_after[MAX_CPUS];
 	unsigned long bps, nbytes_before[MAX_CPUS], nbytes_after[MAX_CPUS];
-	
-	memset(npkts_before, 0, sizeof(unsigned long) * MAX_CPUS);
-	memset(npkts_after, 0, sizeof(unsigned long) * MAX_CPUS);
-	memset(nbytes_before, 0, sizeof(unsigned long) * MAX_CPUS);
-	memset(nbytes_after, 0, sizeof(unsigned long) * MAX_CPUS);
+	unsigned long bpsn, nbytesn_before[MAX_CPUS], nbytesn_after[MAX_CPUS];
+	unsigned long ns, no_slot_before[MAX_CPUS], no_slot_after[MAX_CPUS];
 
 	/* pin this thread on the last cpu */
 	cpu = count_online_cpus() - 1;
@@ -251,6 +302,8 @@ void *count_thread(void *arg)
 		for (n = 0; n < gen.ncpus; n++) {
 			npkts_before[n] = gen_th[n].npkts;
 			nbytes_before[n] = gen_th[n].nbytes;
+			nbytesn_before[n] = gen_th[n].nbytes_nvme;
+			no_slot_before[n] = gen_th[n].no_slot;
 		}
 
 		sleep(1);
@@ -258,23 +311,36 @@ void *count_thread(void *arg)
 		for (n = 0; n < gen.ncpus; n++) {
 			npkts_after[n] = gen_th[n].npkts;
 			nbytes_after[n] = gen_th[n].nbytes;
+			nbytesn_after[n] = gen_th[n].nbytes_nvme;
+			no_slot_after[n] = gen_th[n].no_slot;
 		}
 
 		/* totaling the counters */
-		for (pps = 0, bps = 0, n = 0; n < gen.ncpus; n++) {
+		for (pps = 0, bps = 0, bpsn = 0, ns = 0,
+			n = 0; n < gen.ncpus; n++) {
 			pps += npkts_after[n] - npkts_before[n];
-			bps += nbytes_after[n] - nbytes_before[n];
+			bps += (nbytes_after[n] - nbytes_before[n]) * 8;
+			bpsn += nbytesn_after[n] - nbytesn_before[n];
+			ns += no_slot_after[n] - no_slot_before[n];
 		}
 
-		printf("SUM-PPS: %lu pps\n", pps);
+		printf("SUM-PPS: %lu pps (%.2f Mpps)\n",
+		       pps, (double)pps / 1000000);
 		for (n = 0; n < gen.ncpus; n++)
 			printv1("    CPU-PPS %02d: %lu pps\n", n,
 				npkts_after[n] - npkts_before[n]);
 
-		printf("SUM-BPS: %lu bps\n", bps);
+		printf("SUM-BPS: %lu bps (%.2f Mbps)\n",
+		       bps, (double)bps / 1000000);
 		for (n = 0; n < gen.ncpus; n++)
 			printv1("    CPU-BPS %02d: %lu bps\n", n,
-				nbytes_after[n] - nbytes_before[n]);
+				(nbytes_after[n] - nbytes_before[n]) * 8);
+
+		printf("SUM-BPS-NVME: %lu Bps (%.2f MBps)\n",
+		       bpsn, (double)bpsn / 1000000);
+		printf("NO=SLOT: %lu\n", ns);
+
+		printf("\n");
 	}
 
 	pthread_exit(NULL);
@@ -283,6 +349,8 @@ void *count_thread(void *arg)
 int main(int argc, char **argv)
 {
 	int ret, ch, n, i, max_cpu;
+
+	libpop_verbose_enable();
 
 	ret = 0;
 
@@ -396,12 +464,15 @@ int main(int argc, char **argv)
 		struct nm_desc base_nmd;
 		struct gen_thread *th = &gen_th[n];
 		
+		memset(th, 0, sizeof(*th));
 		snprintf(th->nmport, MAX_NMPORT_NAME, "netmap:%s-%02d",
 			 gen.port, n);
 		th->cpu	= n;
-		th->npkts = 0;
-		th->nbytes = 0;
-		
+		th->lba_start = (gen.lba_end - gen.lba_start)
+			/ gen.ncpus * n;
+		th->lba_end = (gen.lba_end - gen.lba_start)
+			/ gen.ncpus * (n + 1);
+
 		/* initialize netmap port on this queue */
 		memset(&base_nmd, 0, sizeof(base_nmd));
 		ret = nm_parse(th->nmport, &base_nmd, errmsg);
@@ -423,13 +494,13 @@ int main(int argc, char **argv)
 			sig_handler(SIGINT);
 			goto close;
 		}
-
-		/* spawn the thread */
-		pthread_create(&th->tid, NULL, thread_body, th);
 	}
-
+	/* spawn the thread */
+	for (n = 0; n < gen.ncpus; n++)
+	pthread_create(&gen_th[n].tid, NULL, thread_body, &gen_th[n]);
 
 	/* spawn the couting thread */
+	usleep(500000);
 	pthread_create(&gen.tid_cnt, NULL, count_thread, NULL);
 
 close:

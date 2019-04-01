@@ -237,6 +237,8 @@ pop_buf_t *pop_buf_alloc(pop_mem_t *mem, size_t size)
 	pbuf->length	= 0;
 
 	mem->alloced_pages += nr_pages;
+
+	memset(pbuf->vaddr, 0, pbuf->size);
 out:
 	pthread_mutex_unlock(&mem->mutex);
 	return pbuf;

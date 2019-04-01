@@ -48,6 +48,7 @@ struct bench_param {
 	int	time;	/* benchmark time 			*/
 	char	*nvme;	/* pci slot number of nvme device	*/
 	char	*p2p;	/* pci slot number of p2pmem device	*/
+	unsigned long lba_end;	/* end logical block address	*/
 
 	const unvme_ns_t	*ns;	/* nvme namespace	*/
 	pop_mem_t		*mem;	/* boogiepop memory	*/
@@ -57,11 +58,13 @@ struct bench_param p;
 
 struct bench_thread {
 	pthread_t	tid;
-	unsigned long	slba;	/* start LBA for this thread	*/
+	unsigned long	lba_start, lba_end;	/* start/end lba */
 
 	int 		cpu;	/* cpu num this thread runs 	*/
 	unsigned long 	count;	/* number of i/o		*/
 	unsigned long	bytes;	/* number of bytes		*/
+
+
 
 	struct timeval	start;	/* benchmark start time */
 	struct timeval	end;	/* benchmark end time*/
@@ -78,6 +81,7 @@ void print_p(struct bench_param p) {
 	printf("device:     %s\n", p.nvme);
 	printf("mem:        %s\n", p.p2p ? p.p2p : "hugepage");
 	printf("ncpus:      %d\n", p.ncpus);
+	printf("end lba:    0x%lx\n", p.lba_end);
 	printf("time:       %d\n", p.time);
 	printf("=================================\n");
 }
@@ -90,6 +94,7 @@ void usage(void) {
 	       "    -b: batch size\n"
 	       "    -n: number of cpus to be used\n"
 	       "    -t: benchmark time (sec)\n"
+	       "    -e: end lba (hex)\n"
 	       "    -u: PCI slot of target nvme device\n"
 	       "    -p: PCI slot of p2pmem\n");
 }
@@ -185,20 +190,21 @@ void *report_interval(void *arg)
 }
 
 unsigned long next_lba(unsigned long lba,
-		       unsigned long block_end, unsigned long nblocks)
+		       unsigned long lba_start, unsigned long lba_end,
+		       unsigned long nblocks)
 {
 	switch (p.walk) {
 	case WALK_RANDOM:
-		return rand() % (block_end - nblocks);
+		return rand() % (lba_end - lba_start - nblocks) + lba_start;
 
 	case WALK_SAME:
 		return lba;
 
 	case WALK_SEQ:
-		if (lba + (nblocks << 1) < block_end)
+		if (lba + (nblocks << 1) < lba_end)
 			return lba + nblocks;
 		else
-			return 0;
+			return lba_start;
 		break;
 	}
 
@@ -224,7 +230,6 @@ void * bench_start(void *arg)
 	pop_buf_t *bufs[MAX_BATCH_SIZE];	
 	unvme_iod_t iod[MAX_BATCH_SIZE];
 	unsigned long lba, nblocks;
-	unsigned long block_end = 0xe8e088b0;	/* SSDPEDKE020T7 hard code */
 
 	/* pin this thread on the specified cpu */
 	CPU_ZERO(&target_cpu_set);
@@ -239,7 +244,7 @@ void * bench_start(void *arg)
 		pop_buf_put(bufs[n], nblocks * 512);
 	}
 
-	lba = next_lba(th->slba, block_end, nblocks);
+	lba = th->lba_start;
 
 	printf("start on queue %d, slba=%#lx, nblocks=%lu, batch=%d\n",
 	       qid, lba, nblocks, p.batch);
@@ -252,7 +257,7 @@ void * bench_start(void *arg)
 			       b, qid, lba, nblocks);
 			iod[b] = bench(p.mode, qid, pop_buf_data(bufs[b]),
 				       lba, nblocks);
-			lba = next_lba(lba, block_end, nblocks);
+			lba = next_lba(lba, th->lba_start, th->lba_end, nblocks);
 		}
 
 		for (b = 0; b < p.batch; b++) {
@@ -293,8 +298,9 @@ int main(int argc, char **argv)
 	p.p2p	= NULL;
 	p.ncpus = 1;
 	p.time	= 1;
+	p.lba_end = 0xe8e088b0;   /* SSDPEDKE020T7 hard code */
 
-	while ((ch = getopt(argc, argv, "m:w:s:b:u:p:n:t:v")) != -1) {
+	while ((ch = getopt(argc, argv, "m:w:s:b:u:p:n:e:t:v")) != -1) {
 		switch (ch) {
 		case 'm':
 			/* mode, read or write */
@@ -348,6 +354,13 @@ int main(int argc, char **argv)
 			}
 			break;
 
+		case 'e':
+			if (sscanf(optarg, "0x%lx", &p.lba_end) < 1) {
+				printf("invalid end lba: %s\n", optarg);
+				return -1;
+			}
+			break;
+
 		case 't':
 			p.time = atoi(optarg);
 			if (p.time < 0) {
@@ -391,7 +404,8 @@ int main(int argc, char **argv)
 	printf("start benchmarking\n");
 	for (n = 0; n < p.ncpus; n++) {
 		th[n].cpu = n;
-		th[n].slba = 0xe8e088b0 / p.ncpus * n;	/* XXX */
+		th[n].lba_start = p.lba_end / p.ncpus * n;
+		th[n].lba_end = p.lba_end / p.ncpus * (n + 1);
 		pthread_create(&th[n].tid, NULL, bench_start, &th[n]);
 	}
 
