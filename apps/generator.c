@@ -67,6 +67,7 @@ struct generator {
 	
 	/* misc */
 	pthread_t	tid_cnt;	/* tid for count thread */
+	int	interval;	/* usec */
 	int	verbose;	/* verbose level */
 
 } gen;
@@ -96,6 +97,7 @@ void print_gen_info(void)
 	printf("walk (-w):      %s\n", walk_mode_string[gen.walk]);
 	printf("start lba (-s): 0x%lx\n", gen.lba_start);
 	printf("end lba (-e):   0x%lx\n", gen.lba_end);
+	printf("interval (-I):  %d\n", gen.interval);
 	printf("=====================================\n");
 }
 
@@ -110,6 +112,7 @@ void usage(void)
 	       "    -w walk mode         seq or random\n"
 	       "    -s start lba (hex)   start logical block address\n"
 	       "    -e end lba (hex)     end logical block address\n"
+	       "    -I interval (msec)   interval between each xmit\n"
 	       "    -v                   verbose mode\n"
 		);
 }
@@ -160,8 +163,7 @@ void *thread_body(void *arg)
 	}
 
 	/* initialize the start LBA in accordance with walk mode */
-	lba = gen.lba_start + (gen.walk == WALK_MODE_RANDOM ? th->cpu * 4: 0);
-
+	lba = gen.lba_start + (gen.walk == WALK_MODE_RANDOM ? th->cpu * 4 : 0);
 
 	printf("thread on cpu %d, nmport %s, start\n", th->cpu, th->nmport);
 	gettimeofday(&th->start, NULL);
@@ -206,6 +208,8 @@ void *thread_body(void *arg)
 		ring->head = ring->cur = head;
 		ioctl(th->nmd->fd, NIOCTXSYNC, NULL);
 		printv2("TXSYNC\n");
+		if (gen.interval)
+			usleep(gen.interval);
 	}
 
 	gettimeofday(&th->end, NULL);
@@ -295,7 +299,7 @@ int main(int argc, char **argv)
 	gen.lba_end = 0x40000;	/* 4 blocks (1slot) x 2048 slots x 32 rings */
 	gen.verbose = 0;
 
-	while ((ch = getopt(argc, argv, "p:u:i:n:b:w:s:e:v")) != -1) {
+	while ((ch = getopt(argc, argv, "p:u:i:n:b:w:s:e:I:v")) != -1) {
 		switch (ch) {
 		case 'p':
 			gen.pci = optarg;
@@ -341,6 +345,9 @@ int main(int argc, char **argv)
 				printf("invalid end lba %s\n", optarg);
 				return -1;
 			}
+			break;
+		case 'I':
+			gen.interval = atoi(optarg) * 1000;
 			break;
 		case 'v':
 			gen.verbose++;
