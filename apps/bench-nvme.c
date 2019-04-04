@@ -237,11 +237,12 @@ void * bench_start(void *arg)
 	pthread_setaffinity_np(th->tid, sizeof(cpu_set_t), &target_cpu_set);
 	
 	/* number of blocks for one i/o iteration */
-	nblocks = p.size % 512 ? p.size / 512 + 1 : p.size / 512;
+	nblocks = p.size % p.ns->blocksize ?
+		(p.size >> p.ns->blockshift) + 1 : p.size >> p.ns->blockshift;
 
 	for (n = 0; n < p.batch; n++) {
-		bufs[n] = pop_buf_alloc(p.mem, nblocks * 512);
-		pop_buf_put(bufs[n], nblocks * 512);
+		bufs[n] = pop_buf_alloc(p.mem, nblocks << p.ns->blockshift);
+		pop_buf_put(bufs[n], nblocks << p.ns->blockshift);
 	}
 
 	lba = th->lba_start;

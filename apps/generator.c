@@ -24,7 +24,8 @@
 #define WALK_MODE_SEQ  		0
 #define WALK_MODE_RANDOM	1
 
-#define NM_BATCH_TO_NBLOCKS(b)	((b) << 11 >> 9)
+#define NM_BATCH_TO_NBLOCKS(b, u) ((b) << 11 >> (u)->blockshift)
+
 
 static const char *walk_mode_string[] = {
 	"seq", "random"
@@ -108,9 +109,11 @@ void print_gen_info(void)
 	printf("end lba (-e):   0x%lx\n", gen.lba_end);
 	printf("interval (-I):  %d\n", gen.interval);
 	printf("\n");
-	printf("nblocks in a nvme cmd: %d (%d-byte)\n",
-	       NM_BATCH_TO_NBLOCKS(gen.batch),
-	       NM_BATCH_TO_NBLOCKS(gen.batch) * 512);
+	printf("nblocks in a nvme cmd: %d (%d byte, %u byte block)\n",
+	       NM_BATCH_TO_NBLOCKS(gen.batch, gen.unvme),
+	       NM_BATCH_TO_NBLOCKS(gen.batch, gen.unvme) <<
+	       gen.unvme->blockshift,
+	       gen.unvme->blocksize);
 	printf("=====================================\n");
 }
 
@@ -204,7 +207,7 @@ void *thread_body(void *arg)
 
 		/* execute a single read command for all packets 
 		 * in this batch. */
-		nblocks = NM_BATCH_TO_NBLOCKS(batch);
+		nblocks = NM_BATCH_TO_NBLOCKS(batch, gen.unvme);
 		iod = unvme_aread(gen.unvme, qid, pop_buf_data(buf),
 				  lba, nblocks);
 		lba = next_lba(lba, th->lba_start, th->lba_end, nblocks);
@@ -258,7 +261,7 @@ void *thread_body(void *arg)
 
 		th->npkts += npkts;
 		th->nbytes += nbytes;
-		th->nbytes_nvme += nblocks * 512;
+		th->nbytes_nvme += nblocks * gen.unvme->blocksize;
 
 		if (gen.interval)
 			usleep(gen.interval);
@@ -343,7 +346,7 @@ void *count_thread(void *arg)
 		printf("\n");
 	}
 
-	pthread_exit(NULL);
+	return NULL;
 }
 
 int main(int argc, char **argv)
@@ -436,7 +439,7 @@ int main(int argc, char **argv)
 		goto err_out;
 	}
 
-	print_gen_info();
+
 
 	/* initialize rand */
 	srand((unsigned)time(NULL));
@@ -451,6 +454,8 @@ int main(int argc, char **argv)
 	/* open unvme */
 	gen.unvme = unvme_open(gen.nvme);
 	unvme_register_pop_mem(gen.mem);
+
+	print_gen_info();
 
 	/* set signal */
 	if (signal(SIGINT, sig_handler) == SIG_ERR) {
@@ -505,13 +510,18 @@ int main(int argc, char **argv)
 
 close:
 	for (i = 0; i < n; i++) {
+		printf("join %d thread\n", n);
 		pthread_join(gen_th[i].tid, NULL);
-		nm_close(gen_th[i].nmd);
+		printf("close nm_desc for %d\n", n);
+		//nm_close(gen_th[i].nmd);
 	}
 
+	printf("close unvme\n");
 	unvme_close(gen.unvme);
+	printf("pop mem exit\n");
 	pop_mem_exit(gen.mem);
 
+	printf("join count thread\n");
 	pthread_join(gen.tid_cnt, NULL);
 
 	return ret;

@@ -134,12 +134,12 @@ int main(int argc, char **argv)
 
 	int b;
 	int buflen = 2048 * batch;
-	int nblocks = buflen / 512;
+	int nblocks = buflen >> unvme->blockshift;
 	unsigned long npkts = ((lba_end - lba_start) / 4);
 	unsigned long num = 0;
 
-	pbuf = pop_buf_alloc(mem, batch * 4 * 512);
-	pop_buf_put(pbuf, batch * 4 * 512);
+	pbuf = pop_buf_alloc(mem, nblocks << unvme->blockshift);
+	pop_buf_put(pbuf, nblocks << unvme->blockshift);
 
 	printf("write packets from 0x%lx to 0x%lx, batch %d (%d blocks)\n",
 	       lba_start, lba_end, batch, nblocks);
@@ -161,7 +161,7 @@ int main(int argc, char **argv)
 			return -1;
 		}
 
-		printf("write %ld/%ld packets", num, npkts);
+		printf("write %ld/%ld packets\r", num, npkts);
 	}
 	printf("\n");
 
