@@ -480,7 +480,10 @@ int main(int argc, char **argv)
 	while ((ch = getopt(argc, argv, "p:u:i:n:b:w:s:e:I:FHT:v")) != -1) {
 		switch (ch) {
 		case 'p':
-			gen.pci = optarg;
+			if (strncmp(optarg, "hugepage", 8) == 0)
+				gen.pci = NULL;
+			else
+				gen.pci = optarg;
 			break;
 		case 'u':
 			gen.nvme = optarg;
