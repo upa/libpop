@@ -36,7 +36,7 @@ const char *walk_str[] = {
 	"random", "seq", "same",
 };
 
-#define MAX_BATCH_SIZE	32
+#define MAX_BATCH_SIZE	64
 #define MAX_CPU_NUM	32
 
 struct bench_param {
