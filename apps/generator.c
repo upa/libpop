@@ -261,7 +261,7 @@ void *thread_body(void *arg)
 	/* allocate packet buffer. we use a single pop_buf for
 	 * multiple packet buffers. It enalbes us to get all batched
 	 * packets from nvme in a single read command */
-	for (n = 0; n < gen.nvbatch; n++) {
+	for (n = 0; n < gen.nvbatch + 1; n++) {
 		bufs[n] = pop_buf_alloc(gen.mem, 2048 * gen.batch);
 		pop_buf_put(bufs[n], 2048 * gen.batch);
 
@@ -296,7 +296,7 @@ void *thread_body(void *arg)
 
 		head = ring->head;
 
-		if (space > gen.bpkts) {
+		if (space >= gen.bpkts) {
 			nvbatch = gen.nvbatch;
 		} else {
 			nvbatch = space / gen.batch + 1;
