@@ -381,6 +381,11 @@ void *thread_body(void *arg)
 				slot->ptr = pop_virt_to_phys(gen.mem, p);
 				slot->len = get_pktlen_from_desc(p, 2048);
 
+				if (slot->len == 0) {
+					printf("invalid slot len 0 on cpu %d\n",
+					       th->cpu);
+				}
+
 				head = nm_ring_next(ring, head);
 
 				npkts++;

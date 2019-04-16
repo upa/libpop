@@ -24,12 +24,12 @@ void build_pkt(void *buf, int len, unsigned int id)
 	memset(buf, 0, len);
 
 	eth = (struct ether_header *)buf;
-	eth->ether_shost[0] = 0x01;
-	eth->ether_shost[1] = 0x02;
-	eth->ether_shost[2] = 0x03;
-	eth->ether_shost[3] = 0x04;
-	eth->ether_shost[4] = 0x05;
-	eth->ether_shost[5] = 0x06;
+	eth->ether_shost[0] = 0x0;
+	eth->ether_shost[1] = 0x0;
+	eth->ether_shost[2] = 0x0;
+	eth->ether_shost[3] = 0x0;
+	eth->ether_shost[4] = 0x0;
+	eth->ether_shost[5] = 0x0;
 
 	eth->ether_dhost[0] = 0xff;
 	eth->ether_dhost[1] = 0xff;
@@ -44,7 +44,7 @@ void build_pkt(void *buf, int len, unsigned int id)
 	ip->ip_v	= IPVERSION;
 	ip->ip_hl       = 5;
 	ip->ip_id       = 0;
-	ip->ip_tos      = IPTOS_LOWDELAY;
+	ip->ip_tos      = 0;
 	ip->ip_len      = htons(len - sizeof(*eth));
 	ip->ip_off      = 0;
 	ip->ip_ttl      = 16;
@@ -134,9 +134,12 @@ int main(int argc, char **argv)
 
 	int b;
 	int buflen = 2048 * batch;
-	int nblocks = buflen >> unvme->blockshift;
-	unsigned long npkts = ((lba_end - lba_start) / 4);
+	int nblocks;
+	unsigned long npkts;
 	unsigned long num = 0;
+
+	nblocks = buflen >> unvme->blockshift;
+	npkts = ((lba_end - lba_start) << unvme->blockshift) >> 11;
 
 	pbuf = pop_buf_alloc(mem, nblocks << unvme->blockshift);
 	pop_buf_put(pbuf, nblocks << unvme->blockshift);
@@ -144,7 +147,7 @@ int main(int argc, char **argv)
 	printf("write packets from 0x%lx to 0x%lx, batch %d (%d blocks)\n",
 	       lba_start, lba_end, batch, nblocks);
 
-	for (lba = lba_start; lba < lba_end; lba += nblocks) {
+	for (lba = lba_start; lba <= lba_end; lba += nblocks) {
 
 		printf("\r");
 

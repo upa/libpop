@@ -2,7 +2,7 @@ CC = gcc
 INCLUDE := -I../include -I../unvme/src
 LDFLAGS := -L../lib -L../unvme/src
 LDLIBS  := -pthread -lunvme -lpop
-CFLAGS  := -O2 -g -Wall $(INCLUDE) 
+CFLAGS  := -O2 -Wall $(INCLUDE) 
 
 PROGNAME = bench-nvme generator store
 
