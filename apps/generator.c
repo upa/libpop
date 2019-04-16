@@ -333,6 +333,11 @@ void *thread_body(void *arg)
 			lba = next_lba(lba, th->lba_start, th->lba_end,
 				       nblocks);
 
+			if (lba < th->lba_start || lba > th->lba_end) {
+				printf("invalid lba on cpu %d, 0x%lx, start 0x%lx, end 0x%lx\n",
+				       th->cpu, lba, th->lba_start, th->lba_end);
+			}
+
 			nbytes_nvme += nblocks << gen.unvme->blockshift;
 		}
 
@@ -382,8 +387,10 @@ void *thread_body(void *arg)
 				slot->len = get_pktlen_from_desc(p, 2048);
 
 				if (slot->len == 0) {
-					printf("invalid slot len 0 on cpu %d\n",
-					       th->cpu);
+					printv1("invalid slot len 0 on cpu %d\n",
+						th->cpu);
+					printv1("nvbatch=%lu vb=%lu batch=%lu b=%lu\n",
+						nvbatch, vb, batch, b);
 				}
 
 				head = nm_ring_next(ring, head);

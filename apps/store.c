@@ -144,12 +144,11 @@ int main(int argc, char **argv)
 	pbuf = pop_buf_alloc(mem, nblocks << unvme->blockshift);
 	pop_buf_put(pbuf, nblocks << unvme->blockshift);
 
-	printf("write packets from 0x%lx to 0x%lx, batch %d (%d blocks)\n",
-	       lba_start, lba_end, batch, nblocks);
+	printf("write packets from 0x%lx to 0x%lx, "
+	       "batch %d = %d blocks = %d pkts\n",
+	       lba_start, lba_end, batch, nblocks, buflen / 2048);
 
-	for (lba = lba_start; lba <= lba_end; lba += nblocks) {
-
-		printf("\r");
+	for (lba = lba_start; lba < lba_end; lba += nblocks) {
 
 		for (b = 0; b < batch; b++) {
 			void *pkt = pop_buf_data(pbuf) + 2048 * b;
