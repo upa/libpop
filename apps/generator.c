@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sched.h>
+#include <time.h>
 #include <pthread.h>
 #include <net/ethernet.h>
 #include <netinet/ip.h>
@@ -458,6 +459,7 @@ void *thread_body(void *arg)
 void *count_thread(void *arg)
 {
 	int n, cpu;
+	time_t ts;
 	cpu_set_t target_cpu_set;
 	unsigned long pps, npkts_before[MAX_CPUS], npkts_after[MAX_CPUS];
 	unsigned long bps, nbytes_before[MAX_CPUS], nbytes_after[MAX_CPUS];
@@ -487,6 +489,7 @@ void *count_thread(void *arg)
 		}
 
 		sleep(1);
+		ts = time(NULL);
 
 		for (n = 0; n < gen.ncpus; n++) {
 			npkts_after[n] = gen_th[n].npkts;
@@ -506,6 +509,7 @@ void *count_thread(void *arg)
 			ns += no_slot_after[n] - no_slot_before[n];
 		}
 
+		printf("UNIXTIME: %lu\n", ts);
 		printf("SUM-PPS: %lu pps (%.2f Mpps)\n",
 		       pps, (double)pps / 1000000);
 		for (n = 0; n < gen.ncpus; n++)
