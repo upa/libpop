@@ -3,9 +3,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <math.h>
+#include <x86intrin.h>
 
 #include <libpop.h>
-
 
 inline unsigned long long rdtsc() {
 	unsigned long long ret;
@@ -13,6 +13,25 @@ inline unsigned long long rdtsc() {
 	return ret;
 }
 
+static inline void flush_cache(void)
+{
+	asm volatile ("wbinvd":::"memory");
+}
+
+
+#define LINE_SIZE	64
+
+void __attribute__((noinline, noclone))
+clflush_opt(void *addr, size_t nline)
+{
+	int li;
+	for (li=0; li < nline; li++) {
+		_mm_clflushopt(addr + li * LINE_SIZE);
+	}
+
+	//asm volatile ("" ::: "memory");
+	_mm_sfence();
+}
 
 void usage(void)
 {
@@ -30,6 +49,7 @@ int main(int argc, char **argv)
 	int ch, n, i, ret = 0;
 	int nwrite, nloop, size;
 	int dir;	/* 1 is write, 0 is read */
+	int nline;
 	char *mem, *src;
 	void *addr, *target;
 	pop_mem_t *pmem;
@@ -83,11 +103,16 @@ int main(int argc, char **argv)
 		}
 	}
 
+	nline = size / LINE_SIZE;
+	if (size % LINE_SIZE)
+		nline++;
+
 	printf("nwrite     %d\n", nwrite);
 	printf("nloop      %d\n", nloop);
 	printf("size       %d\n", size);
 	printf("mem        %s\n", mem ? mem : "hugepage");
 	printf("direction  %s\n", IS_DIR_WRITE(dir) ? "write" : "read");
+
 
 	/* allocate memory */
 	pmem = pop_mem_init(mem, 0);
@@ -122,15 +147,11 @@ int main(int argc, char **argv)
 			target = addr + nwrite * size;
 			if (IS_DIR_WRITE(dir)) {
 				memcpy(target, src, size);
-				if (!mem) {
-					__builtin___clear_cache(target,
-								target + size);
-				}
+				if (!mem)
+					clflush_opt(target, nline);
 			} else {
-				if (!mem) {
-					__builtin___clear_cache(target,
-								target + size);
-				}
+				if (!mem)
+					clflush_opt(target, nline);
 				memcpy(src, target, size);
 			}
 		}
