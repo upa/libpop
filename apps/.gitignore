@@ -1,5 +1,6 @@
 bench-nvme
 generator
 store
+mb
 
 perf.data
