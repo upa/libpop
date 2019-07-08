@@ -87,23 +87,26 @@ void usage(void) {
 	       "    -b pci    PCI bus slot\n"
 	       "    -p port   netmap port\n"
 	       "    -l len    packet length\n"
-	       "    -q qid    queue id to xmit\n");
+	       "    -q qid    queue id to xmit\n"
+	       "    -n num    number of packets to be sent\n"
+	       "    -D        don't build packet\n");
 }
 
 int main(int argc, char **argv)
 {
 	int ch, n, len = 64, qid = 0;
+	int num = 1;
 	char *pci = NULL;
 	char *port = NULL;
+	int dont_build_pkt = 0;
 
-#define NUM_BUFS	4
 	pop_mem_t *mem;
-	pop_buf_t *pbuf[NUM_BUFS];
+	pop_buf_t **pbuf;
 
 	/* enable verbose log */
 	libpop_verbose_enable();
 
-	while ((ch = getopt(argc, argv, "b:p:l:q:")) != -1){
+	while ((ch = getopt(argc, argv, "b:p:l:q:n:D")) != -1){
 
 		switch (ch) {
 		case 'b' :
@@ -118,14 +121,24 @@ int main(int argc, char **argv)
 		case 'q':
 			qid = atoi(optarg);
 			break;
+		case 'n':
+			num = atoi(optarg);
+			break;
+		case 'D':
+			dont_build_pkt = 1;
+			break;
 		default:
 			usage();
 			return -1;
 		}
 	}
+	if (num < 1 || num > 64) {
+		fprintf(stderr, "invalid num of packets\n");
+		return -1;
+	}
+	pbuf = calloc(num, sizeof(pop_buf_t));
 
 	/* allocate p2pmem */
-
 	mem= pop_mem_init(pci, 0);
 	if (!mem)
 		perror("pop_mem_init");
@@ -146,18 +159,21 @@ int main(int argc, char **argv)
 	}
 
 	/* build packet */
-	for (n = 0; n < NUM_BUFS; n++) {
+	for (n = 0; n < num; n++) {
 		pbuf[n] = pop_buf_alloc(mem, 2048);
 		pop_buf_put(pbuf[n], len);
-		build_pkt(pop_buf_data(pbuf[n]), len, n);
-		hexdump(pop_buf_data(pbuf[n]), 128);
+		if (!dont_build_pkt) {
+			build_pkt(pop_buf_data(pbuf[n]), len, n);
+			hexdump(pop_buf_data(pbuf[n]), 128);
+		}
 	}
 
 	/* xmit packet at bulk */
 	struct netmap_ring *ring = NETMAP_TXRING(d->nifp, qid);
 	unsigned int head = ring->head;
 
-	for (n = 0; n < NUM_BUFS; n++) {
+
+	for (n = 0; n < num; n++) {
 		struct netmap_slot *slot = &ring->slot[head];
 		pop_nm_set_buf(slot, pbuf[n]);
 		head = nm_ring_next(ring, head);
@@ -165,10 +181,11 @@ int main(int argc, char **argv)
 
 	ring->head = ring->cur = head;
 
+	printf("start to send %d packets at a batch\n", num);
 	while (nm_tx_pending(ring)) {
                 printf("pending=%d\n", nm_tx_pending(ring));
                 ioctl(d->fd, NIOCTXSYNC, NULL);
-                usleep(1);
+                sleep(1);
         }
 
 	pop_mem_exit(mem);

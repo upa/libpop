@@ -221,6 +221,7 @@ static int pop_register_p2pmem(struct pci_dev *pdev, size_t size)
 
 	/* wrap size in PAGE_SIZE */
 	size = ((size + (1 << PAGE_SHIFT) - 1) >> PAGE_SHIFT) << PAGE_SHIFT;
+	pr_info("try to allocate %luB from %p\n", size, pci_name(pdev));
 
 	p2pmem = pci_alloc_p2pmem(pdev, size);
 	if (!p2pmem) {
