@@ -2,5 +2,6 @@ bench-nvme
 generator
 store
 mb
+put_packet
 
 perf.data
