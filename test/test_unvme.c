@@ -41,6 +41,7 @@ void usage(void)
 	       "    -n nblocks    number of blocks to read/write\n"
 	       "    -c cmd        read or write\n"
 	       "    -d data       data to be write in HEX\n"
+	       "    -H            no hex dump\n"
 		);
 }
 
@@ -52,12 +53,14 @@ int main(int argc, char **argv)
 	u64 slba = 1;
 	int nblocks = 1;
 	int cmd = UNVME_READ;
-	char data[2048];
+	char data[4096 * 8];
+	int nohex = 0;
+	int data_exist = 0;
 
 	memset(data, 0, sizeof(data));
 	libpop_verbose_enable();
 
-	while ((ch = getopt(argc, argv, "b:u:s:n:c:d:")) != -1) {
+	while ((ch = getopt(argc, argv, "b:u:s:n:c:d:H")) != -1) {
 		
 		switch (ch) {
 		case 'b':
@@ -84,6 +87,10 @@ int main(int argc, char **argv)
 			break;
 		case 'd':
 			strncpy(data, optarg, sizeof(data));
+			data_exist = 1;
+			break;
+		case 'H':
+			nohex = 1;
 			break;
 		default:
 			usage();
@@ -96,11 +103,6 @@ int main(int argc, char **argv)
 	pop_buf_t *pbuf;
 	char *buf;
 
-	/* allocate pop mem */
-	mem= pop_mem_init(pci, 512 * nblocks);
-	if (mem)
-		perror("pop_mem_init");
-	assert(mem);
 
 
 	/* open unvme */
@@ -115,12 +117,20 @@ int main(int argc, char **argv)
 		perror("unvme_open");
 	assert(unvme);
 
+	printf("block size is %d\n", unvme->blocksize);
+
+	/* allocate pop mem */
+	mem= pop_mem_init(pci, unvme->blocksize * nblocks);
+	if (mem)
+		perror("pop_mem_init");
+	assert(mem);
+
 	printf("register pop mem to unvme\n");
 	unvme_register_pop_mem(mem);
 
 	printf("alloc pbuf\n");
-	pbuf = pop_buf_alloc(mem, 512 * nblocks);
-	pop_buf_put(pbuf, 512 * nblocks);
+	pbuf = pop_buf_alloc(mem, unvme->blocksize * nblocks);
+	pop_buf_put(pbuf, unvme->blocksize * nblocks);
 	assert(pbuf);
 	buf = pop_buf_data(pbuf);
 
@@ -135,16 +145,21 @@ int main(int argc, char **argv)
 	case UNVME_READ:
 		ret = unvme_read(unvme, 0, buf, slba, nblocks);
 		printf("unvme_read returns %d\n", ret);
-		printf("dump 256-byte of buf\n");
-		hexdump(buf, 256);
+		if (!nohex) {
+			printf("dump 256-byte of buf\n");
+			hexdump(buf, 256);
+		}
 		break;
 
 	case UNVME_WRITE:
-		strncpy(buf, data, nblocks * 512);
+		if (data_exist)
+			strncpy(buf, data, nblocks * unvme->blocksize);
 		ret = unvme_write(unvme, 0, buf, slba, nblocks);
 		printf("unvme_write returns %d\n", ret);
-		printf("dump 256-byte of buf\n");
-		hexdump(buf, 256);
+		if (!nohex) {
+			printf("dump 256-byte of buf\n");
+			hexdump(buf, 256);
+		}
 		break;
 
 	default:
