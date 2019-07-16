@@ -57,10 +57,12 @@ int main(int argc, char **argv)
 	int nohex = 0;
 	int data_exist = 0;
 
+	int q = 0;
+
 	memset(data, 0, sizeof(data));
 	libpop_verbose_enable();
 
-	while ((ch = getopt(argc, argv, "b:u:s:n:c:d:H")) != -1) {
+	while ((ch = getopt(argc, argv, "b:u:s:n:c:d:q:H")) != -1) {
 		
 		switch (ch) {
 		case 'b':
@@ -88,6 +90,9 @@ int main(int argc, char **argv)
 		case 'd':
 			strncpy(data, optarg, sizeof(data));
 			data_exist = 1;
+			break;
+		case 'q':
+			q = atoi(optarg);
 			break;
 		case 'H':
 			nohex = 1;
@@ -140,10 +145,11 @@ int main(int argc, char **argv)
 	printf("nblocks  %u\n", nblocks);
 	printf("buf      %p\n", buf);
 	printf("paddr    0x%lx\n", pop_buf_paddr(pbuf));
+	printf("queue    %d\n", q);
 
 	switch (cmd) {
 	case UNVME_READ:
-		ret = unvme_read(unvme, 0, buf, slba, nblocks);
+		ret = unvme_read(unvme, q, buf, slba, nblocks);
 		printf("unvme_read returns %d\n", ret);
 		if (!nohex) {
 			printf("dump 256-byte of buf\n");
@@ -154,7 +160,7 @@ int main(int argc, char **argv)
 	case UNVME_WRITE:
 		if (data_exist)
 			strncpy(buf, data, nblocks * unvme->blocksize);
-		ret = unvme_write(unvme, 0, buf, slba, nblocks);
+		ret = unvme_write(unvme, q, buf, slba, nblocks);
 		printf("unvme_write returns %d\n", ret);
 		if (!nohex) {
 			printf("dump 256-byte of buf\n");
