@@ -41,13 +41,15 @@ void usage(void)
 	       "    -n nblocks    number of blocks to read/write\n"
 	       "    -c cmd        read or write\n"
 	       "    -d data       data to be write in HEX\n"
+	       "    -q queue      queue number\n"
+	       "    -r repeat     repeat the cmd as async\n"
 	       "    -H            no hex dump\n"
 		);
 }
 
 int main(int argc, char **argv)
 {
-	int ch, ret;
+	int ch, ret, n;
 	char *pci = NULL;
 	char *nvme = NULL;
 	u64 slba = 1;
@@ -58,11 +60,12 @@ int main(int argc, char **argv)
 	int data_exist = 0;
 
 	int q = 0;
+	int r = 0;
 
 	memset(data, 0, sizeof(data));
 	libpop_verbose_enable();
 
-	while ((ch = getopt(argc, argv, "b:u:s:n:c:d:q:H")) != -1) {
+	while ((ch = getopt(argc, argv, "b:u:s:n:c:d:q:r:H")) != -1) {
 		
 		switch (ch) {
 		case 'b':
@@ -93,6 +96,9 @@ int main(int argc, char **argv)
 			break;
 		case 'q':
 			q = atoi(optarg);
+			break;
+		case 'r':
+			r = atoi(optarg);
 			break;
 		case 'H':
 			nohex = 1;
@@ -146,11 +152,18 @@ int main(int argc, char **argv)
 	printf("buf      %p\n", buf);
 	printf("paddr    0x%lx\n", pop_buf_paddr(pbuf));
 	printf("queue    %d\n", q);
+	printf("repeat   %d\n", r);
 
 	switch (cmd) {
 	case UNVME_READ:
-		ret = unvme_read(unvme, q, buf, slba, nblocks);
-		printf("unvme_read returns %d\n", ret);
+		if (!r) {
+			ret = unvme_read(unvme, q, buf, slba, nblocks);
+			printf("unvme_read returns %d\n", ret);
+		} else {
+			for (n = 0; n < r; n++)
+				unvme_aread(unvme, q, buf, slba, nblocks);
+		}
+
 		if (!nohex) {
 			printf("dump 256-byte of buf\n");
 			hexdump(buf, 256);
@@ -160,8 +173,15 @@ int main(int argc, char **argv)
 	case UNVME_WRITE:
 		if (data_exist)
 			strncpy(buf, data, nblocks * unvme->blocksize);
-		ret = unvme_write(unvme, q, buf, slba, nblocks);
-		printf("unvme_write returns %d\n", ret);
+
+		if (!r) {
+			ret = unvme_write(unvme, q, buf, slba, nblocks);
+			printf("unvme_write returns %d\n", ret);
+		} else {
+			for (n = 0; n < r; n++)
+				unvme_awrite(unvme, q, buf, slba, nblocks);
+		}
+
 		if (!nohex) {
 			printf("dump 256-byte of buf\n");
 			hexdump(buf, 256);
