@@ -1,3 +1,6 @@
 [submodule "unvme"]
 	path = unvme
 	url = https://github.com/upa/unvme
+[submodule "netmap"]
+	path = netmap
+	url = https://github.com/upa/netmap
