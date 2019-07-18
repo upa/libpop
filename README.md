@@ -33,11 +33,13 @@ sudo make install
 ```
 
 
-2. Compile Boogiepop. compiling boogiepop depends on the netmap.
+2. Compile and install Boogiepop. compiling boogiepop depends on the
+netmap.
 
 ```shell-session
 cd boogiepop/
 make
+sudo make install
 ```
 
 
