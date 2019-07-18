@@ -10,44 +10,48 @@ Requirements
 - something good p2pmem card
 
 
-1. install netmap from https://github.com/upa/netmap
-
-confirm i40e depends on the netmap module.
-```
-% lsmod|grep netmap
-netmap                196608  1 i40e
-```
-
-Note that i40e NICs automatically send LLDP packets periodically.  To
-disable this,
-```
-sudo echo lldp stop > /sys/kernel/debug/i40e/0000:17:00.0/command
-```
-or
-```
-ethtool --set-priv-flags <interface> disable-fw-lldp on
-```
 
 
-2. compile and install
+### Compile and Install
 
 ```shell-session
 git clone https://github.com/upa/boogiepop
-cd boogiepop
+cd boogiepop/
 git submodule init && git submodule update
 
-# make install unvme
-cd unvme
-make install && sudo make install
-
-# make boogiepop
-cd ..
-make
-
-# install boogiepop kernel module
-sudo insmod kmod/boogiepop.ko
 ```
 
+
+1. Compile and install a modified netmap. This netmap installs only
+i40e and ixgbe drivers. Tested on only kernel 4.20.
+
+```shell-session
+cd boogiepop/netmap/LINUX
+./configure
+make
+sudo make install
+```
+
+
+2. Compile Boogiepop. compiling boogiepop depends on the netmap.
+
+```shell-session
+cd boogiepop/
+make
+```
+
+
+3. Compile a modified UNVMe. This depends on the boogiepop library.
+
+```shell-session
+cd boogiepop/unvme/
+make
+sudo make install
+```
+
+
+
+# How to
 
 3. set hugepages
 ```
