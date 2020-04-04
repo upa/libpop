@@ -18,7 +18,6 @@ Requirements
 git clone https://github.com/upa/boogiepop
 cd boogiepop/
 git submodule init && git submodule update
-
 ```
 
 
