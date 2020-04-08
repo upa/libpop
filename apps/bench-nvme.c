@@ -374,7 +374,10 @@ int main(int argc, char **argv)
 			break;
 
 		case 'p':
-			p.p2p = optarg;
+			if (strncmp("hugepage", optarg, 8) == 0)
+				p.p2p = NULL;
+			else
+				p.p2p = optarg;
 			break;
 
 		case 'v':
