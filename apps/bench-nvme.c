@@ -155,7 +155,7 @@ void print_interval_result(struct bench_thread *th)
 		bytes_start += th[n].bytes;
 	}
 
-	sleep (1);
+	usleep(250000);
 
 	gettimeofday(&end, NULL);
 	for (n = 0; n < p.ncpus; n++) {
