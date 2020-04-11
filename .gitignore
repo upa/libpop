@@ -10,5 +10,5 @@ Module.symvers
 *.out
 core
 *.o.d
-
+G*
 kmod/.cache.mk

@@ -211,7 +211,9 @@ pop_buf_t *pop_buf_alloc(pop_mem_t *mem, size_t size)
 
 	pthread_mutex_lock(&mem->mutex);
 
+
 	for (nr_pages = 0; (nr_pages << PAGE_SHIFT) < size; nr_pages++);
+	pr_vs("try to allocate %lu bytes, %lu pages", size, nr_pages);
 
 	if ((mem->num_pages - mem->alloced_pages) < nr_pages) {
 		pr_ve("no page available on %s, "

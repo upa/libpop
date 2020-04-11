@@ -242,6 +242,14 @@ void * bench_start(void *arg)
 
 	for (n = 0; n < p.batch; n++) {
 		bufs[n] = pop_buf_alloc(p.mem, nblocks << p.ns->blockshift);
+		if (!bufs[n]) {
+			fprintf(stderr,
+				"failed to pop_buf_alloc() "
+				"%lu bytes on cpu %d: %s\n",
+				nblocks << p.ns->blockshift, th->cpu,
+				strerror(errno));
+			exit(0);
+		}
 		pop_buf_put(bufs[n], nblocks << p.ns->blockshift);
 	}
 
@@ -382,6 +390,7 @@ int main(int argc, char **argv)
 
 		case 'v':
 			verbose_level++;
+			libpop_verbose_enable();
 			break;
 
 		default:
