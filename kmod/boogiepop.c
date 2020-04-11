@@ -81,6 +81,30 @@ static struct pop_dev *pop_find_dev_by_bus_and_slot(int domain,
 	return ppdev;
 }
 
+static loff_t pop_dev_llseek(struct file *filp, loff_t offset, int whence)
+{
+	struct pop_dev *ppdev;
+
+	ppdev = (struct pop_dev *)filp->private_data;
+	if (!ppdev) {
+		pr_err("%s: not private_data\n", __func__);
+		return -EINVAL;
+	}
+
+	switch (whence) {
+	case SEEK_END:
+		return offset + ppdev->size;
+		break;
+	case SEEK_SET:
+	case SEEK_CUR:
+	default:
+		pr_err("%s: invalid whence %d\n", __func__, whence);
+		return -ENOTSUPP;
+	}
+
+	return -EINVAL;
+}
+
 static int pop_dev_open(struct inode *inode, struct file *filp)
 {
 	int domain, ret;
@@ -194,6 +218,7 @@ static int pop_dev_mmap(struct file *filp, struct vm_area_struct *vma)
 static const struct file_operations pop_dev_fops = {
 	.owner		= THIS_MODULE,
 	.mmap		= pop_dev_mmap,
+	.llseek		= pop_dev_llseek,
 	.open		= pop_dev_open,
 	.release	= pop_dev_release,
 };
