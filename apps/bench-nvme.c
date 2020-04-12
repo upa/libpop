@@ -49,6 +49,7 @@ struct bench_param {
 	char	*nvme;	/* pci slot number of nvme device	*/
 	char	*p2p;	/* pci slot number of p2pmem device	*/
 	unsigned long lba_end;	/* end logical block address	*/
+	int	interval;	/* report interval (usec) */
 
 	const unvme_ns_t	*ns;	/* nvme namespace	*/
 	pop_mem_t		*mem;	/* boogiepop memory	*/
@@ -94,6 +95,7 @@ void usage(void) {
 	       "    -b: batch size\n"
 	       "    -n: number of cpus to be used\n"
 	       "    -t: benchmark time (sec)\n"
+	       "    -i: report interval (sec)\n"
 	       "    -e: end lba (hex)\n"
 	       "    -u: PCI slot of target nvme device\n"
 	       "    -p: PCI slot of p2pmem\n");
@@ -155,7 +157,7 @@ void print_interval_result(struct bench_thread *th)
 		bytes_start += th[n].bytes;
 	}
 
-	usleep(250000);
+	usleep(p.interval);
 
 	gettimeofday(&end, NULL);
 	for (n = 0; n < p.ncpus; n++) {
@@ -295,6 +297,7 @@ void sig_handler(int sig)
 int main(int argc, char **argv)
 {
 	int ch, n;
+	float i;
 	struct bench_thread th[MAX_CPU_NUM];
 
 	memset(th, 0, sizeof(th));
@@ -307,9 +310,10 @@ int main(int argc, char **argv)
 	p.p2p	= NULL;
 	p.ncpus = 1;
 	p.time	= 1;
+	p.interval = 250000;
 	p.lba_end = 0xe8e088b0;   /* SSDPEDKE020T7 hard code */
 
-	while ((ch = getopt(argc, argv, "m:w:s:b:u:p:n:e:t:v")) != -1) {
+	while ((ch = getopt(argc, argv, "m:w:s:b:u:p:n:e:t:i:v")) != -1) {
 		switch (ch) {
 		case 'm':
 			/* mode, read or write */
@@ -376,7 +380,13 @@ int main(int argc, char **argv)
 				printf("invalid time: %s\n", optarg);
 			}
 			break;
-
+		case 'i':
+			if (sscanf(optarg, "%f", &i) < 1) {
+				printf("invalid interval: %s\n", optarg);
+				return -1;
+			}
+			p.interval = i * 1000000;
+			break;
 		case 'u':
 			p.nvme = optarg;
 			break;
