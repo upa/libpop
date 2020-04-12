@@ -414,6 +414,10 @@ int main(int argc, char **argv)
 
 	srand((unsigned)time(NULL));
 
+	if (signal(SIGINT, sig_handler) == SIG_ERR) {
+		perror("cannot set signal");
+		return -1;
+	}
 
 	if (!p.nvme) {
 		printf("-u nvme device must be specified\n");
@@ -434,8 +438,10 @@ int main(int argc, char **argv)
 
 	pthread_create(&p.rtid, NULL, report_interval, th);
 
-	sleep(p.time);
-	caught_signal = 1;
+	if (p.time) {
+		sleep(p.time);
+		caught_signal = 1;
+	}
 
 	for (n = 0; n < p.ncpus; n++)
 		pthread_join(th[n].tid, NULL);
