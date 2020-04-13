@@ -57,7 +57,7 @@ struct nmgen {
 	int	timeout;
 
 	struct in_addr dstip, srcip;
-	char dstmac[ETH_ALEN], srcmac[ETH_ALEN];
+	uint8_t dstmac[ETH_ALEN], srcmac[ETH_ALEN];
 
 	pop_mem_t	*mem;	/* pop memory */
 };
@@ -293,23 +293,23 @@ void print_nmgen_info(struct nmgen *gen)
 	char buf[32];
 
 	printf("================ nmgen ================\n");
-	printf("netmap port (-p): %s\n", gen->port);
-	printf("pci (-P):         %s\n", gen->pci ? gen->pci : "hugepage");
-	printf("pktlen (-l):      %d\n", gen->pktlen);
-	printf("ncpus (-n):       %d\n", gen->ncpus);
-	printf("batch (-b):       %d\n", gen->batch);
-	printf("interval (-i):    %f\n", gen->interval / 1000000);
-	printf("timeout (-t):     %d\n", gen->timeout);
+	printf("netmap port (-p):    %s\n", gen->port);
+	printf("pci (-P):            %s\n", gen->pci ? gen->pci : "hugepage");
+	printf("pktlen (-l):         %d\n", gen->pktlen);
+	printf("ncpus (-n):          %d\n", gen->ncpus);
+	printf("batch (-b):          %d\n", gen->batch);
+	printf("interval (-i):       %f\n", gen->interval / 1000000);
+	printf("timeout (-t):        %d\n", gen->timeout);
 
 	inet_ntop(AF_INET, &gen->dstip, buf, sizeof(buf));
-	printf("dstip (-d):       %s\n", buf);
+	printf("dstip (-d):          %s\n", buf);
 	inet_ntop(AF_INET, &gen->srcip, buf, sizeof(buf));
-	printf("srcip (-s):       %s\n", buf);
+	printf("srcip (-s):          %s\n", buf);
 
-	printf("dstmac (-D):      %02x:%02x:%02x:%02x:%02x:%02x\n",
+	printf("dstmac (-D):         %02x:%02x:%02x:%02x:%02x:%02x\n",
 	       gen->dstmac[0], gen->dstmac[1], gen->dstmac[2],
 	       gen->dstmac[3], gen->dstmac[4], gen->dstmac[5]);
-	printf("srcmac (-S):      %02x:%02x:%02x:%02x:%02x:%02x\n",
+	printf("srcmac (-S):         %02x:%02x:%02x:%02x:%02x:%02x\n",
 	       gen->srcmac[0], gen->srcmac[1], gen->srcmac[2],
 	       gen->srcmac[3], gen->srcmac[4], gen->srcmac[5]);
 	printf("=======================================\n");
@@ -352,6 +352,7 @@ int main(int argc, char **argv)
 	gen.timeout = 0;
 	inet_pton(AF_INET, "10.0.10.1", &gen.dstip);
 	inet_pton(AF_INET, "10.0.10.2", &gen.srcip);
+	memset(gen.dstmac, 0xFF, ETH_ALEN);
 
 	while ((ch = getopt(argc, argv, "p:P:l:n:b:i:t:d:s:D:S:h")) != -1) {
 		switch (ch) {
