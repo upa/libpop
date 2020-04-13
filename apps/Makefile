@@ -4,7 +4,7 @@ LDFLAGS := -L../lib -L../unvme/src
 LDLIBS  := -pthread -lunvme -lpop -lm
 CFLAGS  := -O3 -march=native -g -Wall $(INCLUDE)
 
-PROGNAME = bench-nvme generator store mb put_packet
+PROGNAME = bench-nvme generator store mb put_packet nmgen
 
 all: $(PROGNAME)
 

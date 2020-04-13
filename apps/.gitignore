@@ -3,5 +3,6 @@ generator
 store
 mb
 put_packet
+nmgen
 
 perf.data
