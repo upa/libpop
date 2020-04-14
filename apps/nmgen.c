@@ -9,7 +9,6 @@
 #include <unistd.h>
 #include <time.h>
 #include <sys/time.h>
-#include <sys/poll.h>
 #include <sched.h>
 #include <signal.h>
 #include <pthread.h>
@@ -69,8 +68,9 @@ struct nmgen_thread {
 	int		cpu;
 	struct nm_desc	*nmd;	/* nm_desc for this thread	*/
 
+	int		cancel;
 	unsigned long	npkts;	/* packet counter	*/
-	unsigned long	nbytes;	/* byte counter	*/
+	unsigned long	nbits;	/* byte counter	*/
 };
 
 
@@ -133,14 +133,14 @@ void build_packet(struct nmgen_thread *th, void *pkt)
 
 	udp = (struct udphdr *)(ip + 1);
 	udp->uh_ulen	= htons(gen->pktlen - sizeof(*eth) - sizeof(*ip));
-	udp->uh_dport	= htons(60000);
+	udp->uh_dport	= rand() & 0xFFFF;
 	udp->uh_sport	= htons(60000 + th->cpu);
 	udp->uh_sum	= 0;
 }
 
 void *nmgen_thread_body(void *arg)
 {
-	unsigned long npkts, nbytes, head, space, batch, b;
+	unsigned long npkts, nbits, head, space, batch, b;
 	double elapsed;
 	struct timeval start, end;
 	struct nmgen_thread *th = arg;
@@ -150,7 +150,6 @@ void *nmgen_thread_body(void *arg)
 	pop_buf_t *pbuf;
 	void *pkts[MAX_BATCH_NUM];
 	uintptr_t pkts_phy[MAX_BATCH_NUM];	/* phy addr of packets */
-	struct pollfd x = { .fd = th->nmd->fd, .events = POLLIN };
 	int n;
 
 	/* pin this thread on the cpu */
@@ -180,20 +179,17 @@ void *nmgen_thread_body(void *arg)
 	gettimeofday(&start, NULL);
 
 	/* xmit loop */
-	while (!caught_signal) {
+	while (!th->cancel) {
 		npkts = 0;
-		nbytes = 0;
+		nbits = 0;
 
-		if (poll(&x, 1, 500) < 0) {
-			fprintf(stderr, "poll() on cpu %d: %s\n",
+		if (ioctl(th->nmd->fd, NIOCTXSYNC, NULL) < 0) {
+			fprintf(stderr, "ioctl error on cpu %d: %s\n",
 				th->cpu, strerror(errno));
-			return NULL;
+			goto out;
 		}
-		if (!x.revents & POLLIN)
-			continue;
 
 		space = nm_ring_space(ring);
-
 		batch = space > gen->batch ? gen->batch : space;
 		head = ring->head;
 
@@ -204,26 +200,31 @@ void *nmgen_thread_body(void *arg)
 			slot->len = gen->pktlen;
 
 			npkts++;
-			nbytes += gen->pktlen;
+			nbits += (gen->pktlen << 3);
 
 			head = nm_ring_next(ring, head);
 		}
 
 		ring->head = ring->cur = head;
-		ioctl(th->nmd->fd, NIOCTXSYNC, NULL);
 
 		th->npkts += npkts;
-		th->nbytes = nbytes;
+		th->nbits += nbits;
+	}
+
+	while (nm_tx_pending(ring)) {
+		ioctl(th->nmd->fd, NIOCTXSYNC, NULL);
+		usleep(1);
 	}
 
 	gettimeofday(&end, NULL);
 
 	elapsed = end.tv_sec * 1000000 + end.tv_usec;
 	elapsed -= (start.tv_sec * 1000000 + start.tv_usec);
+	elapsed /= 1000000;	/* sec */
 
 	printf("CPU=%d %.2f pps, %.2f Mpps, %.2f bps, %.2f Mbps\n", th->cpu,
 	       th->npkts / elapsed, th->npkts / elapsed / 1000000,
-	       th->nbytes / elapsed, th->nbytes / elapsed / 1000000);
+	       th->nbits / elapsed, th->nbits / elapsed / 1000000);
 
 out:
 	return NULL;
@@ -234,7 +235,7 @@ void *count_thread(void *arg)
 	struct nmgen_thread *ths = arg;
 	struct nmgen *gen = ths[0].gen;
 	unsigned long npkts_b[MAX_CPU_NUM], npkts_a[MAX_CPU_NUM];
-	unsigned long nbytes_b[MAX_CPU_NUM], nbytes_a[MAX_CPU_NUM];
+	unsigned long nbits_b[MAX_CPU_NUM], nbits_a[MAX_CPU_NUM];
 	double pps, bps, elapsed;
 	struct timeval b, a;
 	cpu_set_t cpu_set;
@@ -254,22 +255,23 @@ void *count_thread(void *arg)
 		/* gather counters */
 		for (n = 0; n < gen->ncpus; n++) {
 			npkts_b[n] = ths[n].npkts;
-			nbytes_b[n] = ths[n].nbytes;
+			nbits_b[n] = ths[n].nbits;
 		}
-		gettimeofday(&b, NULL);
 
+		gettimeofday(&b, NULL);
 		usleep(gen->interval);
+		gettimeofday(&a, NULL);
 
 		for (n = 0; n < gen->ncpus; n++) {
 			npkts_a[n] = ths[n].npkts;
-			nbytes_a[n] = ths[n].nbytes;
+			nbits_a[n] = ths[n].nbits;
 		}
-		gettimeofday(&a, NULL);
+
 		
 		/* totaling the counters */
 		for (pps = 0, bps = 0, n = 0; n < gen->ncpus; n++) {
 			pps += npkts_a[n] - npkts_b[n];
-			bps += nbytes_a[n] - nbytes_b[n];
+			bps += nbits_a[n] - nbits_b[n];
 		}
 		     
 		/* elapsed tie is usec */
@@ -285,6 +287,11 @@ void *count_thread(void *arg)
 		       bps / elapsed, bps / elapsed / 1000000);
 	}
 	
+	/* stop sender threads */
+	printf("\n");
+	for (n = 0; n < gen->ncpus; n++)
+		ths[n].cancel = 1;
+
 	return NULL;
 }
 
@@ -343,6 +350,8 @@ int main(int argc, char **argv)
 	struct nmgen gen;
 	pthread_t ctid;
 	int ch, n, ret;
+
+	srand((unsigned)time(NULL));
 
 	memset(&gen, 0, sizeof(gen));
 	gen.pktlen = 64;
