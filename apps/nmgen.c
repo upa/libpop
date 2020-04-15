@@ -22,7 +22,7 @@
 
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
-
+#include <libnetmap.h>
 
 
 static int caught_signal = 0;
@@ -66,7 +66,12 @@ struct nmgen_thread {
 
 	pthread_t	tid;
 	int		cpu;
+
+#ifdef LIBNETMAP
+	struct nmport_d *nmd;
+#else
 	struct nm_desc	*nmd;	/* nm_desc for this thread	*/
+#endif /* LIBNETMAP */
 
 	int		cancel;
 	unsigned long	npkts;	/* packet counter	*/
@@ -351,7 +356,7 @@ int main(int argc, char **argv)
 	struct nmgen_thread ths[MAX_CPU_NUM];
 	struct nmgen gen;
 	pthread_t ctid;
-	int ch, n, ret;
+	int ch, n;
 
 	srand((unsigned)time(NULL));
 
@@ -453,11 +458,35 @@ int main(int argc, char **argv)
 		th->gen = &gen;
 		th->cpu = n;
 
+#ifdef LIBNETMAP
+		if (n == 0) {
+			th->nmd = nmport_prepare(gen.port);
+			if (!th->nmd) {
+				fprintf(stderr, "nmport_preapre failed\n");
+				return -1;
+			}
+			th->nmd->reg.nr_mode = NR_REG_ONE_NIC;
+			if (nmport_open_desc(th->nmd) < 0) {
+				fprintf(stderr, "nmport_open_desc failed\n");
+				return -1;
+			}
+
+		} else {
+			th->nmd = nmport_clone(ths[0].nmd);
+			th->nmd->reg.nr_ringid = n;
+			if (nmport_open_desc(th->nmd)< 0) {
+				fprintf(stderr,
+					"nmport_open_desc for %d failed", n);
+				return -1;
+			}
+		}
+#else
 		if (n == 0) {
 			/* initialize the first netmap port on queue 0*/
 			struct nm_desc base_nmd;
 			char errmsg[64];
 			int flags;
+			int ret;
 			memset(&base_nmd, 0, sizeof(base_nmd));
 			ret = nm_parse(gen.port, &base_nmd, errmsg);
 			if (ret) {
@@ -489,6 +518,7 @@ int main(int argc, char **argv)
 				strerror(errno));
 			return -1;
 		}
+#endif
 	}
 
 
