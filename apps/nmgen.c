@@ -41,6 +41,8 @@ int count_online_cpus(void)
 	return -1;
 }
 
+#define NMGEN_MODE_TX	0
+#define NMGEN_MODE_RX	1
 
 #define MAX_BATCH_NUM	64
 #define MAX_CPU_NUM	32
@@ -48,6 +50,8 @@ int count_online_cpus(void)
 struct nmgen {
 	char	*port;	/* netmap port	*/
 	char	*pci;
+	int	mode;	/* NMGEN_MODE_TX or NMGEN_MODE_RX */
+
 	int	pktlen;	/* packet length	*/
 	int	ncpus;	/* number of cpus to be used	*/
 	int	batch;	/* batch size	*/
@@ -143,7 +147,7 @@ void build_packet(struct nmgen_thread *th, void *pkt)
 	udp->uh_sum	= 0;
 }
 
-void *nmgen_thread_body(void *arg)
+void *nmgen_sender_body(void *arg)
 {
 	unsigned long npkts, nbits, head, space, batch, b;
 	double elapsed;
@@ -237,6 +241,72 @@ out:
 	return NULL;
 }
 
+void *nmgen_receiver_body(void *arg)
+{
+	unsigned long npkts, nbits, head;
+	double elapsed;
+	struct timeval start, end;
+	struct pop_nm_rxring *prxring;
+	struct nmgen_thread *th = arg;
+	struct nmgen *gen = th->gen;
+	struct netmap_ring *ring;
+	struct netmap_slot *slot;
+	cpu_set_t target_cpu_set;
+
+	/* pin this thread on the cpu */
+	CPU_ZERO(&target_cpu_set);
+	CPU_SET(th->cpu, &target_cpu_set);
+	pthread_setaffinity_np(th->tid, sizeof(cpu_set_t), &target_cpu_set);
+
+	/* correlate netmap rxring with pop memory */
+	ring = NETMAP_RXRING(th->nmd->nifp, th->cpu);
+	prxring = pop_nm_rxring_init(th->nmd->fd, ring, gen->mem);
+
+	printf("start recv loop on cpu %d, fd %d\n", th->cpu, th->nmd->fd);
+
+	gettimeofday(&start, NULL);
+
+	/* recv loop */
+	while (!th->cancel) {
+		npkts = 0;
+		nbits = 0;
+
+		if (ioctl(th->nmd->fd, NIOCRXSYNC, NULL) < 0) {
+			fprintf(stderr, "ioctl error on cpu %d: %s\n",
+				th->cpu, strerror(errno));
+			goto out;
+		}
+
+
+		while (!nm_ring_empty(ring)) {
+			head = ring->head;
+			slot = &ring->slot[head];
+
+			npkts++;
+			nbits += (slot->len << 3);
+
+			head = nm_ring_next(ring, head);
+			ring->head = ring->cur = head;
+		}
+
+		th->npkts += npkts;
+		th->nbits += nbits;
+	}
+
+	gettimeofday(&end, NULL);
+
+	elapsed = end.tv_sec * 1000000 + end.tv_usec;
+	elapsed -= (start.tv_sec * 1000000 + start.tv_usec);
+	elapsed /= 1000000;	/* sec */
+
+	printf("CPU=%d %.2f pps, %.2f Mpps, %.2f bps, %.2f Mbps\n", th->cpu,
+	       th->npkts / elapsed, th->npkts / elapsed / 1000000,
+	       th->nbits / elapsed, th->nbits / elapsed / 1000000);
+
+out:
+	return NULL;
+}
+
 void *count_thread(void *arg)
 {
 	struct nmgen_thread *ths = arg;
@@ -309,6 +379,8 @@ void print_nmgen_info(struct nmgen *gen)
 	printf("================ nmgen ================\n");
 	printf("netmap port (-p):    %s\n", gen->port);
 	printf("pci (-P):            %s\n", gen->pci ? gen->pci : "hugepage");
+	printf("mode (-m):           %s\n",
+	       gen->mode == NMGEN_MODE_TX ? "tx" : "rx");
 	printf("pktlen (-l):         %d\n", gen->pktlen);
 	printf("ncpus (-n):          %d\n", gen->ncpus);
 	printf("batch (-b):          %d\n", gen->batch);
@@ -334,6 +406,7 @@ void usage(void) {
 	       "\n"
 	       "    -p port           netmap port\n"
 	       "    -P pci            pop memory slot or 'hugepage'\n"
+	       "    -m tx/rx          direction\n"
 	       "\n"
 	       "    -l pktlen         packet length\n"
 	       "    -n ncpus          number of CPUs to be used\n"
@@ -361,6 +434,7 @@ int main(int argc, char **argv)
 	srand((unsigned)time(NULL));
 
 	memset(&gen, 0, sizeof(gen));
+	gen.mode = NMGEN_MODE_TX;
 	gen.pktlen = 60;
 	gen.ncpus = 1;
 	gen.batch = 1;
@@ -370,7 +444,7 @@ int main(int argc, char **argv)
 	inet_pton(AF_INET, "10.0.10.2", &gen.srcip);
 	memset(gen.dstmac, 0xFF, ETH_ALEN);
 
-	while ((ch = getopt(argc, argv, "p:P:l:n:b:i:t:d:s:D:S:h")) != -1) {
+	while ((ch = getopt(argc, argv, "p:P:m:l:n:b:i:t:d:s:D:S:h")) != -1) {
 		switch (ch) {
 		case 'p':
 			gen.port = optarg;
@@ -380,6 +454,16 @@ int main(int argc, char **argv)
 				gen.pci = NULL;
 			else
 				gen.pci = optarg;
+			break;
+		case 'm':
+			if (strncmp(optarg, "tx", 2) == 0)
+				gen.mode = NMGEN_MODE_TX;
+			else if (strncmp(optarg, "rx", 2) == 0)
+				gen.mode = NMGEN_MODE_RX;
+			else {
+				fprintf(stderr, "invalid mode %s\n", optarg);
+				return -1;
+			}
 			break;
 		case 'l':
 			gen.pktlen = atoi(optarg);
@@ -434,6 +518,10 @@ int main(int argc, char **argv)
 		fprintf(stderr, "-p port must be specified\n");
 		return -1;
 	}
+
+	/* rx needs all cpus to check all queues (skimped work) */
+	if (gen.mode == NMGEN_MODE_RX)
+		gen.ncpus = count_online_cpus();
 
 	print_nmgen_info(&gen);
 
@@ -524,12 +612,27 @@ int main(int argc, char **argv)
 
 	/* spawn the threads */
 	for (n = 0; n < gen.ncpus; n++) {
-		pthread_create(&ths[n].tid, NULL, nmgen_thread_body, &ths[n]);
+		switch (gen.mode) {
+		case NMGEN_MODE_TX:
+			pthread_create(&ths[n].tid, NULL,
+				       nmgen_sender_body, &ths[n]);
+			break;
+		case NMGEN_MODE_RX:
+			pthread_create(&ths[n].tid, NULL,
+				       nmgen_receiver_body, &ths[n]);
+			break;
+		}
+
 		usleep(1000);	/* 1msec */
 	}
 
 	/* spwan counter thread */
 	pthread_create(&ctid, NULL, count_thread, ths);
+
+	if (gen.timeout) {
+		sleep(gen.timeout);
+		caught_signal = 1;
+	}
 
 	/* join the threads */
 	pthread_join(ctid, NULL);
