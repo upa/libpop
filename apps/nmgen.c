@@ -133,8 +133,8 @@ void build_packet(struct nmgen_thread *th, void *pkt)
 
 	udp = (struct udphdr *)(ip + 1);
 	udp->uh_ulen	= htons(gen->pktlen - sizeof(*eth) - sizeof(*ip));
-	udp->uh_dport	= rand() & 0xFFFF;
-	udp->uh_sport	= htons(60000 + th->cpu);
+	udp->uh_dport	= htons(60000 + th->cpu);
+	udp->uh_sport	= rand() & 0xFFFF;
 	udp->uh_sum	= 0;
 }
 
@@ -174,7 +174,7 @@ void *nmgen_thread_body(void *arg)
 
 	ring = NETMAP_TXRING(th->nmd->nifp, th->cpu);
 
-	printf("start xmit loop on cpu %d\n", th->cpu);
+	printf("start xmit loop on cpu %d, fd %d\n", th->cpu, th->nmd->fd);
 
 	gettimeofday(&start, NULL);
 
@@ -190,6 +190,8 @@ void *nmgen_thread_body(void *arg)
 		}
 
 		space = nm_ring_space(ring);
+		if (!space)
+			continue;
 		batch = space > gen->batch ? gen->batch : space;
 		head = ring->head;
 
@@ -354,7 +356,7 @@ int main(int argc, char **argv)
 	srand((unsigned)time(NULL));
 
 	memset(&gen, 0, sizeof(gen));
-	gen.pktlen = 64;
+	gen.pktlen = 60;
 	gen.ncpus = 1;
 	gen.batch = 1;
 	gen.interval = 1000000;
@@ -483,7 +485,7 @@ int main(int argc, char **argv)
 		}
 
 		if (!th->nmd) {
-			fprintf(stderr, "nm_open for %d: %s\n", n,
+			fprintf(stderr, "nm_open for %d failed: %s\n", n,
 				strerror(errno));
 			return -1;
 		}
