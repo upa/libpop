@@ -4,5 +4,6 @@ store
 mb
 put_packet
 nmgen
+nvgen
 .#*
 perf.data
