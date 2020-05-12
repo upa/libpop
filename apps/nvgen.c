@@ -341,16 +341,26 @@ void *nvgen_sender_unvme_body(void *arg)
 {
 	struct nvgen_thread *th = arg;
 	struct nvgen *gen = th->gen;
+
 	unsigned int lba, space, batch, b, head, nblocks = 0;
 	unvme_iod_t iod[MAX_NVBATCH_NUM];
 	void *slots[SLOT_NUM];
-	int n, ret;
+	cpu_set_t target_cpu_set;
+	int n, ret, cpu;
 	
+	/* pin this thread on the cpu */
+	cpu = th->cpu + (count_online_cpus() >> 1);
+	CPU_ZERO(&target_cpu_set);
+	CPU_SET(cpu, &target_cpu_set);
+	pthread_setaffinity_np(th->tid, sizeof(cpu_set_t), &target_cpu_set);
+
 	for (n = 0; n < SLOT_NUM; n++) {
 		slots[n] = th->buf + (2048 * n);
 	}
 
 	lba = th->lba_start;
+
+	printf("start unvme loop qid %d on cpu %d\n", th->cpu, cpu);
 
 	while (!th->cancel) {
 		
@@ -697,6 +707,11 @@ int main(int argc, char **argv)
 	}
 	if (!gen.nvme) {
 		fprintf(stderr, "-u unvme device must be specified\n");
+		return -1;
+	}
+
+	if (gen.ncpus * 2 > count_online_cpus()) {
+		fprintf(stderr, "ncpus must be < %d\n", count_online_cpus());
 		return -1;
 	}
 
