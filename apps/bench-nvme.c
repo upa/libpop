@@ -36,12 +36,21 @@ const char *walk_str[] = {
 	"random", "seq", "same",
 };
 
+enum {
+	SPLIT_EQUAL	= 0,
+	SPLIT_NOSPLIT	= 1,
+};
+const char *split_str[] = {
+	"equal", "nosplit",
+};
+
 #define MAX_BATCH_SIZE	64
 #define MAX_CPU_NUM	32
 
 struct bench_param {
 	int	mode;	/* NVME_CMD_WRITE or NVME_CMD_READ 	*/
 	int	walk;	/* WALK_* 				*/
+	int	split;	/* SPLIT_*/
 	int	size;	/* size of each i/o 			*/
 	int	batch;	/* batch size 				*/
 	int	ncpus;	/* number of used cpus			*/
@@ -77,6 +86,7 @@ void print_p(struct bench_param p) {
 	printf("==== Benchmark Configuration ====\n");
 	printf("mode:       %s\n", p.mode == NVME_CMD_READ ? "read" : "write");
 	printf("walk:       %s\n", walk_str[p.walk]);
+	printf("split:      %s\n", split_str[p.split]);
 	printf("size:       %d\n", p.size);
 	printf("batch:      %d\n", p.batch);
 	printf("device:     %s\n", p.nvme);
@@ -91,6 +101,7 @@ void usage(void) {
 	printf("usage:\n"
 	       "    -m: mode, read or write\n"
 	       "    -w: walk mode, random, seq, or same\n"
+	       "    -S: how to split LBAs into threads, equal or nosplit\n"
 	       "    -s: message size\n"
 	       "    -b: batch size\n"
 	       "    -n: number of cpus to be used\n"
@@ -304,6 +315,7 @@ int main(int argc, char **argv)
 	memset(&p, 0, sizeof(p));
 	p.mode	= NVME_CMD_READ;
 	p.walk	= WALK_RANDOM;
+	p.split = SPLIT_EQUAL;
 	p.size	= 64;
 	p.batch = 1;
 	p.nvme	= NULL;
@@ -313,7 +325,7 @@ int main(int argc, char **argv)
 	p.interval = 250000;
 	p.lba_end = 0xe8e088b0;   /* SSDPEDKE020T7 hard code */
 
-	while ((ch = getopt(argc, argv, "m:w:s:b:u:p:n:e:t:i:v")) != -1) {
+	while ((ch = getopt(argc, argv, "m:w:S:s:b:u:p:n:e:t:i:v")) != -1) {
 		switch (ch) {
 		case 'm':
 			/* mode, read or write */
@@ -338,6 +350,19 @@ int main(int argc, char **argv)
 				p.walk = WALK_SAME;
 			else {
 				printf("invalid walk mode: %s\n", optarg);
+				usage();
+				return -1;
+			}
+			break;
+
+		case 'S':
+			/* split */
+			if (strncmp(optarg, "equal", 5) == 0)
+				p.split = SPLIT_EQUAL;
+			else if (strncmp(optarg, "nosplit", 7) == 0)
+				p.split = SPLIT_NOSPLIT;
+			else {
+				printf("invalid split: %s\n", optarg);
 				usage();
 				return -1;
 			}
@@ -431,8 +456,16 @@ int main(int argc, char **argv)
 	printf("start benchmarking\n");
 	for (n = 0; n < p.ncpus; n++) {
 		th[n].cpu = n;
-		th[n].lba_start = p.lba_end / p.ncpus * n;
-		th[n].lba_end = p.lba_end / p.ncpus * (n + 1);
+		switch (p.split) {
+		case SPLIT_EQUAL:
+			th[n].lba_start = p.lba_end / p.ncpus * n;
+			th[n].lba_end = p.lba_end / p.ncpus * (n + 1);
+			break;
+		case SPLIT_NOSPLIT:
+			th[n].lba_start = 0;
+			th[n].lba_end = p.lba_end;
+			break;
+		}
 		pthread_create(&th[n].tid, NULL, bench_start, &th[n]);
 	}
 
